@@ -1,0 +1,38 @@
+name: macOS App CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build_and_test:
+    runs-on: macos-latest # Использует последнюю доступную версию macOS
+
+    steps:
+      # 1. Клонирование репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Выбор версии Xcode (опционально: по умолчанию используется самая свежая)
+      - name: Setup Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # 3. Разрешение зависимостей (Swift Package Manager)
+      - name: Resolve Swift Packages
+        run: xcodebuild -resolvePackageDependencies
+
+
+      # 4. Сборка и прогон тестов
+      - name: Build and Test
+        run: |
+          xcodebuild clean build test \
+            -project "ChianParser.xcodeproj" \
+            -scheme "ChianParser" \
+            -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
