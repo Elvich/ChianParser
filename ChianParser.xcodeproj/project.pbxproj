@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D4A12B3B2F81C13400BA7C4A /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = D4A12B3A2F81C13400BA7C4A /* SwiftSoup */; };
+		D4A12B3D2F81C13400BA7C4A /* SwiftSoupProfile in Frameworks */ = {isa = PBXBuildFile; productRef = D4A12B3C2F81C13400BA7C4A /* SwiftSoupProfile */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D40A99A52F7AB74D00BA5B15 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4A12B3B2F81C13400BA7C4A /* SwiftSoup in Frameworks */,
+				D4A12B3D2F81C13400BA7C4A /* SwiftSoupProfile in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = ChianParser;
 			packageProductDependencies = (
+				D4A12B3A2F81C13400BA7C4A /* SwiftSoup */,
+				D4A12B3C2F81C13400BA7C4A /* SwiftSoupProfile */,
 			);
 			productName = ChianParser;
 			productReference = D40A99952F7AB74C00BA5B15 /* ChianParser.app */;
@@ -195,6 +204,9 @@
 			);
 			mainGroup = D40A998C2F7AB74C00BA5B15;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D4A12B392F81C13400BA7C4A /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D40A99962F7AB74C00BA5B15 /* Products */;
 			projectDirPath = "";
@@ -400,7 +412,17 @@
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -408,7 +430,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParser;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -433,7 +455,17 @@
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -441,7 +473,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParser;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -463,7 +495,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParserTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -484,7 +516,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParserTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -504,7 +536,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParserUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -524,7 +556,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6ZLS7ZXJD4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 11.5;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ru.elvi4.ChianParserUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -577,6 +609,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D4A12B392F81C13400BA7C4A /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.13.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D4A12B3A2F81C13400BA7C4A /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A12B392F81C13400BA7C4A /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		D4A12B3C2F81C13400BA7C4A /* SwiftSoupProfile */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A12B392F81C13400BA7C4A /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoupProfile;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D40A998D2F7AB74C00BA5B15 /* Project object */;
 }

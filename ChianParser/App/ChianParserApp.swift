@@ -10,8 +10,12 @@ import SwiftData
 
 @main
 struct ChianParserApp: App {
+    let container = AppContainer()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
+            Apartment.self,
+            PricePoint.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -26,6 +30,7 @@ struct ChianParserApp: App {
         WindowGroup {
             ContentView()
         }
+        .environment(container)
         .modelContainer(sharedModelContainer)
     }
 }
