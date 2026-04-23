@@ -55,6 +55,41 @@ final class Apartment {
     
     // Флаг детального парсинга
     var isDetailedParsed: Bool = false // Был ли выполнен детальный парсинг
+
+    // MARK: - Workflow (статус, заметки, ожидание)
+
+    /// Current workflow status (raw string for SwiftData persistence)
+    var statusRaw: String = ApartmentStatus.new.rawValue
+
+    /// User notes for this apartment
+    var notes: String = ""
+
+    /// JSON-encoded WaitingCondition — nil when status != .waiting
+    var waitingConditionJSON: String? = nil
+
+    // MARK: - Computed workflow helpers
+
+    /// Strongly-typed status backed by statusRaw
+    var status: ApartmentStatus {
+        get { ApartmentStatus(rawValue: statusRaw) ?? .new }
+        set { statusRaw = newValue.rawValue }
+    }
+
+    /// Decoded WaitingCondition backed by waitingConditionJSON
+    var waitingCondition: WaitingCondition? {
+        get {
+            guard let json = waitingConditionJSON,
+                  let data = json.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(WaitingCondition.self, from: data)
+        }
+        set {
+            guard let condition = newValue else {
+                waitingConditionJSON = nil
+                return
+            }
+            waitingConditionJSON = (try? String(data: JSONEncoder().encode(condition), encoding: .utf8)) ?? nil
+        }
+    }
     
     // Служебные даты
     var dateAdded: Date         // Когда мы впервые нашли это объявление

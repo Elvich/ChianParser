@@ -50,15 +50,15 @@ enum DemandLevel {
 // MARK: - Flip Grade
 
 enum FlipGrade {
-    case excellent  // 80+
-    case good       // 60+
+    case excellent  // 70+
+    case good       // 55+
     case average    // 40+
     case weak       // < 40
 
     init(score: Int) {
         switch score {
-        case 80...: self = .excellent
-        case 60...: self = .good
+        case 70...: self = .excellent
+        case 55...: self = .good
         case 40...: self = .average
         default:    self = .weak
         }

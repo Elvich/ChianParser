@@ -74,12 +74,16 @@ struct ContentBody: View {
             }
         }
         .onAppear { viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .onChange(of: apartments)       { _, new in viewModel.refreshScores(from: new, thresholds: thresholds) }
-        .onChange(of: viewModel.sortOrder) { _, _ in viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .onChange(of: moderate) { _, _ in viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .onChange(of: market)   { _, _ in viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .onChange(of: hot)      { _, _ in viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .navigationTitle("Найдено: \(apartments.count)")
+        .onChange(of: apartments)                    { _, new in viewModel.scheduleRefresh(from: new, thresholds: thresholds) }
+        .onChange(of: viewModel.sortOrder)           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
+        .onChange(of: moderate)                      { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
+        .onChange(of: market)                        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
+        .onChange(of: hot)                           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
+        .onChange(of: viewModel.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            StatusFilterBar(viewModel: viewModel)
+        }
+        .navigationTitle("Показано: \(viewModel.cachedScores.count)/\(apartments.count)")
         .navigationSubtitle(viewModel.detailLoader.isLoading ? viewModel.detailLoader.statusMessage : "")
         .navigationDestination(for: Apartment.self) { apartment in
             let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
@@ -164,6 +168,10 @@ struct ContentBody: View {
             HStack {
                 TextField("URL поиска Циан", text: $viewModel.urlString)
                     .textFieldStyle(.roundedBorder)
+
+                Toggle("Авто-детали", isOn: $viewModel.autoDetailParsing)
+                    .toggleStyle(.switch)
+                    .help("Автоматически запускать детальный парсинг для каждой найденной квартиры")
 
                 Toggle("Несколько страниц", isOn: $viewModel.enablePagination)
                     .toggleStyle(.switch)
@@ -290,58 +298,134 @@ private struct ApartmentRow: View {
     let apartment: Apartment
     let flipScore: FlipScoreResult
 
+    @State private var isHovered = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(apartment.title)
-                    .font(.headline)
-                Spacer()
-                FlipScoreBadge(score: flipScore.totalScore)
-            }
+        HStack(spacing: 0) {
+            // Status color strip
+            Rectangle()
+                .fill(apartment.status.color)
+                .frame(width: 3)
+                .clipShape(RoundedRectangle(cornerRadius: 1.5))
 
-            HStack {
-                Text("\(apartment.price.formatted(.number)) ₽")
-                    .foregroundColor(.blue)
-                    .font(.subheadline.weight(.semibold))
-
-                if apartment.priceHistory.count > 1 {
-                    let oldPrice = apartment.priceHistory[apartment.priceHistory.count - 2].price
-                    let diff = apartment.price - oldPrice
-                    if diff != 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: diff < 0 ? "arrow.down" : "arrow.up")
-                            Text("\(abs(diff).formatted(.number))")
-                        }
-                        .font(.caption)
-                        .foregroundColor(diff < 0 ? .green : .red)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(apartment.title)
+                        .font(.headline)
+                    Spacer()
+                    if isHovered {
+                        QuickStatusButtons(apartment: apartment)
+                    } else {
+                        FlipScoreBadge(score: flipScore.totalScore)
                     }
                 }
 
-                Spacer()
-                DemandBadge(level: flipScore.demandLevel)
-            }
+                HStack {
+                    Text("\(apartment.price.formatted(.number)) ₽")
+                        .foregroundColor(.blue)
+                        .font(.subheadline.weight(.semibold))
 
-            Text(apartment.address)
-                .font(.caption)
+                    if apartment.priceHistory.count > 1 {
+                        let oldPrice = apartment.priceHistory[apartment.priceHistory.count - 2].price
+                        let diff = apartment.price - oldPrice
+                        if diff != 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: diff < 0 ? "arrow.down" : "arrow.up")
+                                Text("\(abs(diff).formatted(.number))")
+                            }
+                            .font(.caption)
+                            .foregroundColor(diff < 0 ? .green : .red)
+                        }
+                    }
+
+                    Spacer()
+                    DemandBadge(level: flipScore.demandLevel)
+                }
+
+                Text(apartment.address)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 12) {
+                    if let area = apartment.area {
+                        Label(String(format: "%.1f м²", area), systemImage: "square")
+                            .font(.caption2)
+                    }
+                    if let floor = apartment.floor, let total = apartment.totalFloors {
+                        Label("\(floor)/\(total)", systemImage: "building.2")
+                            .font(.caption2)
+                    }
+                    if let priceSqm = flipScore.priceSqm {
+                        Label(String(format: "%.0f ₽/м²", priceSqm), systemImage: "chart.bar")
+                            .font(.caption2)
+                    }
+                }
                 .foregroundColor(.secondary)
+            }
+            .padding(.leading, 8)
+            .padding(.vertical, 4)
+        }
+        .onHover { isHovered = $0 }
+    }
+}
 
-            HStack(spacing: 12) {
-                if let area = apartment.area {
-                    Label(String(format: "%.1f м²", area), systemImage: "square")
-                        .font(.caption2)
+// MARK: - Quick Status Buttons (shown on hover)
+
+private struct QuickStatusButtons: View {
+    let apartment: Apartment
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(quickActions, id: \.self) { status in
+                Button {
+                    apartment.status = status
+                } label: {
+                    Image(systemName: status.icon)
+                        .foregroundStyle(status.color)
+                        .frame(width: 22, height: 22)
                 }
-                if let floor = apartment.floor, let total = apartment.totalFloors {
-                    Label("\(floor)/\(total)", systemImage: "building.2")
-                        .font(.caption2)
-                }
-                if let priceSqm = flipScore.priceSqm {
-                    Label(String(format: "%.0f ₽/м²", priceSqm), systemImage: "chart.bar")
-                        .font(.caption2)
+                .buttonStyle(.plain)
+                .help(status.label)
+            }
+        }
+    }
+
+    /// Show the next logical statuses + ban, excluding the current one
+    private var quickActions: [ApartmentStatus] {
+        let all: [ApartmentStatus] = [.study, .call, .visit, .calc, .deal, .waiting, .ban]
+        return all.filter { $0 != apartment.status }
+    }
+}
+
+// MARK: - Status Filter Bar
+
+private struct StatusFilterBar: View {
+    @Bindable var viewModel: ContentViewModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(ApartmentStatus.allCases) { status in
+                    let isActive = viewModel.activeStatusFilters.contains(status)
+                    Button {
+                        viewModel.toggleStatusFilter(status)
+                    } label: {
+                        Label(status.label, systemImage: status.icon)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(isActive ? status.color.opacity(0.2) : Color.clear)
+                            .foregroundStyle(isActive ? status.color : .secondary)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(isActive ? status.color.opacity(0.5) : Color.secondary.opacity(0.3), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .foregroundColor(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
-        .padding(.vertical, 4)
+        .background(.regularMaterial)
     }
 }
 

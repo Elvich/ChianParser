@@ -54,6 +54,12 @@ final class ContentViewModel {
     var showClearDataConfirmation: Bool = false
     var sortOrder: SortOrder = .flipScore
 
+    /// Statuses shown in the list. Defaults to everything except .ban.
+    var activeStatusFilters: Set<ApartmentStatus> = ApartmentStatus.defaultVisible
+
+    /// When enabled, newly found apartments are automatically queued for detail parsing.
+    var autoDetailParsing: Bool = false
+
     // MARK: - Init
 
     init(
@@ -68,6 +74,11 @@ final class ContentViewModel {
         self.exportService = exportService
         self.flipAnalyzer = flipAnalyzer
         self.detailLoader = detailLoader
+
+        // Wire up the detail loader callback — called whenever its queue drains
+        detailLoader.onBatchComplete = { [weak self] in
+            self?.onDetailParsingComplete()
+        }
     }
 
     // MARK: - Scoring
@@ -75,18 +86,70 @@ final class ContentViewModel {
     /// Cached scored apartments — rebuilt only when data or sort order changes.
     private(set) var cachedScores: [(Apartment, FlipScoreResult)] = []
 
-    /// Rebuild the score cache. Call this whenever apartments, sortOrder, or thresholds change.
-    func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds) {
-        let benchmark = flipAnalyzer.buildBenchmark(from: apartments)
-        let pairs = apartments.map { apt in
-            (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
+    private var refreshTask: Task<Void, Never>?
+
+    /// Debounced entry point — coalesces rapid calls (e.g. during scraping) into a single rebuild.
+    /// During active scraping the delay is longer since the user isn't inspecting the list.
+    func scheduleRefresh(from apartments: [Apartment], thresholds: DemandThresholds) {
+        refreshTask?.cancel()
+        let delay: Duration = isScraping ? .seconds(1) : .milliseconds(250)
+        refreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.refreshScores(from: apartments, thresholds: thresholds)
         }
+    }
+
+    /// Rebuild the score cache synchronously. Prefer scheduleRefresh for UI-triggered calls.
+    func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds) {
+        // Build benchmark from ALL apartments (not just visible ones) for accurate pricing
+        let benchmark = flipAnalyzer.buildBenchmark(from: apartments)
+
+        // Check waiting conditions — may update apartment.status (MainActor-safe)
+        checkWaitingConditions(apartments: apartments, benchmark: benchmark, thresholds: thresholds)
+
+        // Score and filter
+        let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
+            guard activeStatusFilters.contains(apt.status) else { return nil }
+            return (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
+        }
+
         cachedScores = pairs.sorted { lhs, rhs in
             switch sortOrder {
             case .flipScore:   return lhs.1.totalScore > rhs.1.totalScore
             case .price:       return lhs.0.price < rhs.0.price
             case .viewsPerDay: return (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
             case .dateAdded:   return lhs.0.dateAdded > rhs.0.dateAdded
+            }
+        }
+    }
+
+    /// Toggle a status in the active filter set.
+    func toggleStatusFilter(_ status: ApartmentStatus) {
+        if activeStatusFilters.contains(status) {
+            activeStatusFilters.remove(status)
+        } else {
+            activeStatusFilters.insert(status)
+        }
+    }
+
+    // MARK: - Waiting Condition Checker
+
+    /// Checks all apartments with .waiting status and moves them to .study if their condition is met.
+    private func checkWaitingConditions(
+        apartments: [Apartment],
+        benchmark: BenchmarkContext,
+        thresholds: DemandThresholds
+    ) {
+        for apt in apartments where apt.status == .waiting {
+            guard let condition = apt.waitingCondition else { continue }
+            let score = flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+            if condition.isMet(currentPrice: apt.price, currentScore: score.totalScore) {
+                apt.status = .study
+                apt.waitingConditionJSON = nil
+                let note = condition.note.isEmpty ? condition.summary : condition.note
+                if !apt.notes.isEmpty { apt.notes += "\n" }
+                apt.notes += "[Авто] Условие выполнено: \(note)"
             }
         }
     }
@@ -160,6 +223,7 @@ final class ContentViewModel {
         if !foundApartments.isEmpty {
             var newCount = 0
             var updatedCount = 0
+            var newlyInserted: [Apartment] = []
 
             for apartment in foundApartments {
                 let id = apartment.id
@@ -171,8 +235,14 @@ final class ContentViewModel {
                     }
                 } else {
                     modelContext.insert(apartment)
+                    newlyInserted.append(apartment)
                     newCount += 1
                 }
+            }
+
+            // Auto-enqueue new apartments for detail parsing if enabled
+            if autoDetailParsing && !newlyInserted.isEmpty {
+                detailLoader.enqueue(newlyInserted)
             }
 
             log = "✅ Успешно! Новых: \(newCount) | Обновлено: \(updatedCount) | Всего на странице: \(foundApartments.count)"
@@ -228,9 +298,7 @@ final class ContentViewModel {
 
     func startDetailParsing(apartments: [Apartment]) {
         log = "🔍 Запуск детального парсинга..."
-        detailLoader.loadDetailPages(for: apartments) { [weak self] in
-            self?.onDetailParsingComplete()
-        }
+        detailLoader.loadDetailPages(for: apartments)
     }
 
     private func onDetailParsingComplete() {

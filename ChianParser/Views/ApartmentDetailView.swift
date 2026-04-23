@@ -22,6 +22,8 @@ struct ApartmentDetailView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     headerView
                     metroView
+                    statusAndNotesView
+                    waitingConditionView
                     statsHighlightView
                     flipScoreView
                     currentPriceView
@@ -44,6 +46,121 @@ struct ApartmentDetailView: View {
                 } label: {
                     Label("К парсеру", systemImage: "chevron.left")
                 }
+            }
+        }
+    }
+
+    // MARK: - Status & Notes
+
+    private var statusAndNotesView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Статус")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    ForEach(ApartmentStatus.allCases) { status in
+                        Button {
+                            apartment.status = status
+                            // Clear waiting condition when leaving .waiting
+                            if status != .waiting {
+                                apartment.waitingConditionJSON = nil
+                            }
+                        } label: {
+                            Label(status.label, systemImage: status.icon)
+                        }
+                    }
+                } label: {
+                    Label(apartment.status.label, systemImage: apartment.status.icon)
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(apartment.status.color.opacity(0.15))
+                        .foregroundStyle(apartment.status.color)
+                        .clipShape(Capsule())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Заметки")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $apartment.notes)
+                    .font(.body)
+                    .frame(minHeight: 80)
+                    .padding(8)
+                    .background(Color(.textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+            }
+        }
+        .padding()
+        .background(Color(.windowBackgroundColor).opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+
+    // MARK: - Waiting Condition
+
+    @State private var showWaitingSheet = false
+
+    @ViewBuilder
+    private var waitingConditionView: some View {
+        if apartment.status == .waiting {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Условие ожидания", systemImage: "clock.badge")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        showWaitingSheet = true
+                    } label: {
+                        Image(systemName: apartment.waitingCondition == nil ? "plus.circle" : "pencil.circle")
+                            .foregroundStyle(.orange)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if let condition = apartment.waitingCondition {
+                    HStack {
+                        Image(systemName: "checkmark.seal")
+                            .foregroundStyle(.orange)
+                        Text(condition.summary)
+                            .font(.subheadline)
+                        Spacer()
+                        Button {
+                            apartment.waitingCondition = nil
+                        } label: {
+                            Image(systemName: "xmark.circle")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if !condition.note.isEmpty {
+                        Text(condition.note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Условие не задано — квартира будет оставаться в статусе \"Ожидание\" бесконечно")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
+            .sheet(isPresented: $showWaitingSheet) {
+                WaitingConditionSheet(condition: Binding(
+                    get: { apartment.waitingCondition ?? WaitingCondition(type: .priceBelow) },
+                    set: { apartment.waitingCondition = $0 }
+                ))
             }
         }
     }
