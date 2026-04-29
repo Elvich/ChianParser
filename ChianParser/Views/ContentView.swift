@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import WebKit
 
 // MARK: - Entry Point View
 
@@ -38,7 +39,23 @@ struct ContentBody: View {
     @AppStorage("demandThresholdMarket")   private var market: Int   = DemandThresholds.default.market
     @AppStorage("demandThresholdHot")      private var hot: Int      = DemandThresholds.default.hot
 
-    @State private var showSettings = false
+    // Metro banlist — JSON stored in AppStorage, decoded once into @State
+    @AppStorage(MetroBanlist.appStorageKey) private var metroBanlistJSON: String = MetroBanlist.defaultJSON
+    @State private var metroBanlist: Set<String> = []
+
+    // Search URL list — JSON stored in AppStorage, decoded once into @State
+    @AppStorage(SearchURLList.appStorageKey) private var searchURLListJSON: String = SearchURLList.defaultJSON
+    @State private var searchURLs: [String] = []
+
+    // Parser settings from AppStorage (shared with SettingsView → Парсинг tab)
+    @AppStorage("parserAutoDetail")       private var autoDetail: Bool = true
+    @AppStorage("parserAutoCheck")        private var autoCheck: Bool = true
+    @AppStorage("parserStaleDays")        private var staleDays: Int = 3
+    @AppStorage("parserEnablePagination") private var enablePagination: Bool = true
+    @AppStorage("parserMaxPages")         private var maxPages: Int = 1
+    @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
+
+    @Environment(\.openSettings) private var openSettings
 
     private var thresholds: DemandThresholds {
         DemandThresholds(moderate: moderate, market: market, hot: hot)
@@ -50,45 +67,6 @@ struct ContentBody: View {
         } detail: {
             scrapingControlPanel
         }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Готово") { showSettings = false }
-                        }
-                    }
-            }
-            .frame(minWidth: 380, minHeight: 460)
-        }
-    }
-
-    // MARK: - Sidebar: Apartment List
-
-    private var apartmentList: some View {
-        List {
-            ForEach(viewModel.cachedScores, id: \.0.id) { apartment, flipScore in
-                NavigationLink(value: apartment) {
-                    ApartmentRow(apartment: apartment, flipScore: flipScore)
-                }
-            }
-        }
-        .onAppear { viewModel.refreshScores(from: apartments, thresholds: thresholds) }
-        .onChange(of: apartments)                    { _, new in viewModel.scheduleRefresh(from: new, thresholds: thresholds) }
-        .onChange(of: viewModel.sortOrder)           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
-        .onChange(of: moderate)                      { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
-        .onChange(of: market)                        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
-        .onChange(of: hot)                           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
-        .onChange(of: viewModel.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds) }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            StatusFilterBar(viewModel: viewModel)
-        }
-        .navigationTitle("Показано: \(viewModel.cachedScores.count)/\(apartments.count)")
-        .navigationSubtitle(viewModel.detailLoader.isLoading ? viewModel.detailLoader.statusMessage : "")
-        .navigationDestination(for: Apartment.self) { apartment in
-            let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
-            ApartmentDetailView(apartment: apartment, flipScore: flipScore)
-        }
         .toolbar {
             ToolbarItemGroup {
                 sortMenu
@@ -99,6 +77,14 @@ struct ContentBody: View {
                     Label("Детальный парсинг", systemImage: "arrow.down.circle")
                 }
                 .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading || viewModel.isScraping)
+
+                Button {
+                    viewModel.checkStaleApartments(from: apartments)
+                } label: {
+                    Label("Проверить активность", systemImage: "arrow.clockwise.circle")
+                }
+                .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading)
+                .help("Проверить квартиры, не появлявшиеся в поиске более \(viewModel.staleDaysThreshold) дн.")
 
                 Menu {
                     Button {
@@ -124,7 +110,7 @@ struct ContentBody: View {
                 .disabled(apartments.isEmpty)
 
                 Button {
-                    showSettings = true
+                    openSettings()
                 } label: {
                     Label("Настройки", systemImage: "gearshape")
                 }
@@ -141,6 +127,70 @@ struct ContentBody: View {
             Button("Отмена", role: .cancel) {}
         } message: {
             Text("Это действие нельзя отменить. Будут удалены все сохранённые квартиры и история цен.")
+        }
+        .task {
+            // Decode once on appear — not on every render pass
+            metroBanlist = MetroBanlist.decode(from: metroBanlistJSON)
+            searchURLs   = SearchURLList.decode(from: searchURLListJSON)
+            // Sync parser settings to VM
+            viewModel.autoDetailParsing = autoDetail
+            viewModel.autoCheckActivity = autoCheck
+            viewModel.staleDaysThreshold = staleDays
+            viewModel.enablePagination = enablePagination
+            viewModel.maxPages = maxPages
+            viewModel.parsingMode = parserMode
+        }
+        .onChange(of: metroBanlistJSON)   { _, new in
+            metroBanlist = MetroBanlist.decode(from: new)
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: searchURLListJSON)  { _, new in searchURLs = SearchURLList.decode(from: new) }
+        .onChange(of: autoDetail)         { _, v in viewModel.autoDetailParsing = v }
+        .onChange(of: autoCheck)          { _, v in viewModel.autoCheckActivity = v }
+        .onChange(of: staleDays)          { _, v in viewModel.staleDaysThreshold = v }
+        .onChange(of: enablePagination)   { _, v in viewModel.enablePagination = v }
+        .onChange(of: maxPages)           { _, v in viewModel.maxPages = v }
+        .onChange(of: parserMode)         { _, v in viewModel.parsingMode = v }
+    }
+
+    // MARK: - Sidebar: Apartment List
+
+    private var apartmentList: some View {
+        List {
+            ForEach(viewModel.cachedScores, id: \.0.id) { apartment, flipScore in
+                NavigationLink(value: apartment) {
+                    ApartmentRow(apartment: apartment, flipScore: flipScore)
+                }
+            }
+        }
+        .onAppear { viewModel.refreshScores(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: apartments)                    { _, new in viewModel.scheduleRefresh(from: new, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.sortOrder) { _, _ in
+            // Sort is a user action — animate the reorder visually
+            withAnimation(.easeInOut(duration: 0.2)) {
+                viewModel.refreshScores(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+        }
+        .onChange(of: moderate)                      { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: market)                        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: hot)                           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                StatusFilterBar(viewModel: viewModel)
+                if !viewModel.availableOkrugs.isEmpty {
+                    Divider()
+                    OkrugFilterBar(viewModel: viewModel)
+                }
+            }
+        }
+        .navigationTitle("Показано: \(viewModel.cachedScores.count)/\(apartments.count)")
+        .navigationSubtitle(viewModel.detailLoader.isLoading ? viewModel.detailLoader.statusMessage : "")
+        .navigationDestination(for: Apartment.self) { apartment in
+            let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
+            ApartmentDetailView(apartment: apartment, flipScore: flipScore)
         }
     }
 
@@ -166,29 +216,48 @@ struct ContentBody: View {
     private var scrapingControlPanel: some View {
         VStack {
             HStack {
-                TextField("URL поиска Циан", text: $viewModel.urlString)
-                    .textFieldStyle(.roundedBorder)
-
-                Toggle("Авто-детали", isOn: $viewModel.autoDetailParsing)
-                    .toggleStyle(.switch)
-                    .help("Автоматически запускать детальный парсинг для каждой найденной квартиры")
-
-                Toggle("Несколько страниц", isOn: $viewModel.enablePagination)
-                    .toggleStyle(.switch)
-
-                if viewModel.enablePagination {
-                    Stepper("Страниц: \(viewModel.maxPages)", value: $viewModel.maxPages, in: 1...20)
-                        .frame(width: 150)
+                // URL list status indicator
+                VStack(alignment: .leading, spacing: 2) {
+                    if viewModel.isScraping {
+                        Text("Ссылка \(viewModel.currentURLIndex + 1) из \(viewModel.searchURLs.count)")
+                            .font(.subheadline.weight(.medium))
+                        if let currentURL = viewModel.currentURL {
+                            Text(currentURL.absoluteString)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    } else {
+                        Text(searchURLs.isEmpty ? "Нет ссылок" : "\(searchURLs.count) ссылок в очереди")
+                            .font(.subheadline)
+                            .foregroundStyle(searchURLs.isEmpty ? .red : .secondary)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Compact settings summary — change in Settings (Cmd+,)
+                HStack(spacing: 8) {
+                    Label(viewModel.autoDetailParsing ? "Авто-детали" : "Без авто-деталей",
+                          systemImage: viewModel.autoDetailParsing ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(viewModel.autoDetailParsing ? .green : .secondary)
+                    if viewModel.enablePagination {
+                        Label("\(viewModel.maxPages) стр.", systemImage: "doc.on.doc")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption)
+                .help("Настройки парсинга — Cmd+,")
 
                 Button(viewModel.isScraping ? "Остановить" : "Запустить парсер") {
                     if viewModel.isScraping {
                         viewModel.stopScraping()
                     } else {
-                        viewModel.startScraping()
+                        viewModel.startScraping(urls: searchURLs)
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.isScraping && searchURLs.isEmpty)
             }
             .padding()
 
@@ -204,6 +273,15 @@ struct ContentBody: View {
 
                 if viewModel.showCaptchaAlert {
                     captchaAlert
+                }
+            } else if viewModel.detailLoader.isLoading, let detailWebView = viewModel.detailLoader.webView {
+                ExistingWebView(webView: detailWebView)
+                    .background(Color.black.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding()
+
+                if viewModel.detailLoader.captchaDetected {
+                    detailCaptchaAlert
                 }
             } else {
                 ContentUnavailableView(
@@ -226,6 +304,29 @@ struct ContentBody: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.secondary.opacity(0.1))
         }
+    }
+
+    // MARK: - Detail Captcha Alert
+
+    private var detailCaptchaAlert: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Капча при детальном парсинге")
+                    .fontWeight(.semibold)
+            }
+            .font(.headline)
+
+            Text("Решите капчу в браузере выше — парсинг продолжится автоматически после загрузки страницы")
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+        .padding()
     }
 
     // MARK: - Captcha Alert
@@ -300,6 +401,10 @@ private struct ApartmentRow: View {
 
     @State private var isHovered = false
 
+    private var daysSinceLastSeen: Int {
+        Calendar.current.dateComponents([.day], from: apartment.lastSeenInSearch, to: Date()).day ?? 0
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Status color strip
@@ -312,6 +417,12 @@ private struct ApartmentRow: View {
                 HStack {
                     Text(apartment.title)
                         .font(.headline)
+                    if daysSinceLastSeen >= 7 {
+                        Image(systemName: "eye.slash")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .help("Не появлялась в поиске \(daysSinceLastSeen) дн. — возможно снята с продажи")
+                    }
                     Spacer()
                     if isHovered {
                         QuickStatusButtons(apartment: apartment)
@@ -397,6 +508,41 @@ private struct QuickStatusButtons: View {
     }
 }
 
+// MARK: - Okrug Filter Bar
+
+private struct OkrugFilterBar: View {
+    @Bindable var viewModel: ContentViewModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(viewModel.availableOkrugs, id: \.self) { okrug in
+                    let isActive = viewModel.activeOkrugFilters.contains(okrug)
+                    Button {
+                        viewModel.toggleOkrugFilter(okrug)
+                    } label: {
+                        Text(okrug)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(isActive ? Color.blue.opacity(0.18) : Color.clear)
+                            .foregroundStyle(isActive ? Color.blue : .secondary)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(
+                                isActive ? Color.blue.opacity(0.5) : Color.secondary.opacity(0.3),
+                                lineWidth: 1
+                            ))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .background(.regularMaterial)
+    }
+}
+
 // MARK: - Status Filter Bar
 
 private struct StatusFilterBar: View {
@@ -433,3 +579,14 @@ private struct StatusFilterBar: View {
     ContentView()
         .modelContainer(for: Apartment.self, inMemory: true)
 }
+// MARK: - Wrapper for an externally-owned WKWebView
+
+/// Embeds an existing WKWebView instance into the SwiftUI view hierarchy without recreating it.
+/// Used to display DetailPageLoader's hidden webview so the user can see and solve captchas.
+struct ExistingWebView: NSViewRepresentable {
+    let webView: WKWebView
+
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+

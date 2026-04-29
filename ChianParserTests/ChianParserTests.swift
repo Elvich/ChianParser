@@ -201,6 +201,164 @@ struct FlipAnalyzerBenchmarkTests {
     }
 }
 
+// MARK: - CianResponse: HTML Parser
+
+@Suite("CianResponse — HTML Parser")
+struct CianResponseHTMLParserTests {
+
+    // Minimal Cian-like article HTML with data-name attributes.
+    // Mirrors the real structure confirmed from the live page.
+    private func makeArticleHTML(
+        id: String = "123456789",
+        title: String = "2-комн. квартира, 54 м², 7/16 этаж",
+        price: String = "9 500 000 \u{20BD}",
+        geoLabels: [String] = ["Москва", "ЮАО", "р-н Чертаново Северное", "м. Южная", "Балаклавский проспект", "5"],
+        specialGeo: String = "Южная\n8 минут пешком"
+    ) -> String {
+        let geoHTML = geoLabels.map { "<span data-name=\"GeoLabel\">\($0)</span>" }.joined()
+        return """
+        <article data-name="CardComponent">
+          <a href="https://www.cian.ru/sale/flat/\(id)/" target="_blank"></a>
+          <div data-name="TitleComponent">\(title)</div>
+          <div data-name="ContentRow">\(price)</div>
+          <div data-name="SpecialGeo">\(specialGeo)</div>
+          \(geoHTML)
+        </article>
+        """
+    }
+
+    @Test("Extracts basic apartment fields from HTML")
+    func extractOffers_basicFields() throws {
+        let html = "<html><body>\(makeArticleHTML())</body></html>"
+        let results = CianDataExtractor.extractData(from: html)
+        let apt = try #require(results.first)
+        #expect(apt.id == "123456789")
+        #expect(apt.price == 9_500_000)
+        #expect(apt.title == "2-комн. квартира, 54 м², 7/16 этаж")
+        #expect(apt.address == "Москва, ЮАО, р-н Чертаново Северное, м. Южная, Балаклавский проспект, 5")
+        #expect(apt.metro == "Южная")
+        #expect(apt.metroDistance == 8)
+        #expect(apt.metroTransportType == "walk")
+    }
+
+    @Test("Extracts floor and area from title")
+    func extractOffers_floorAndArea() throws {
+        let html = "<html><body>\(makeArticleHTML())</body></html>"
+        let results = CianDataExtractor.extractData(from: html)
+        let apt = try #require(results.first)
+        #expect(apt.floor == 7)
+        #expect(apt.totalFloors == 16)
+        #expect(apt.area == 54.0)
+    }
+
+    @Test("Detects studio from title")
+    func extractOffers_studio() throws {
+        let html = "<html><body>\(makeArticleHTML(title: "Студия, 24,2 м², 3/12 этаж"))</body></html>"
+        let results = CianDataExtractor.extractData(from: html)
+        let apt = try #require(results.first)
+        #expect(apt.roomsCount == 0)
+    }
+
+    @Test("Detects rooms count from title")
+    func extractOffers_roomsCount() throws {
+        let html = "<html><body>\(makeArticleHTML(title: "3-комн. квартира, 78 м², 5/9 этаж"))</body></html>"
+        let results = CianDataExtractor.extractData(from: html)
+        let apt = try #require(results.first)
+        #expect(apt.roomsCount == 3)
+    }
+
+    @Test("Returns empty array for HTML with no articles")
+    func extractOffers_noArticles() {
+        let html = "<html><body><p>Ничего не найдено</p></body></html>"
+        #expect(CianDataExtractor.extractData(from: html).isEmpty)
+    }
+
+    @Test("Skips article if /flat/ URL is not present")
+    func extractOffers_skipsNonFlatLink() {
+        let html = """
+        <html><body>
+        <article data-name="CardComponent">
+          <a href="https://www.cian.ru/sale/commercial/999/">не квартира</a>
+          <div data-name="TitleComponent">Офис</div>
+          <div data-name="ContentRow">5 000 000 \u{20BD}</div>
+        </article>
+        </body></html>
+        """
+        #expect(CianDataExtractor.extractData(from: html).isEmpty)
+    }
+
+    @Test("Parses multiple articles")
+    func extractOffers_multipleArticles() {
+        let a1 = makeArticleHTML(id: "111", title: "1-комн. квартира, 35 м², 3/5 этаж", price: "5 000 000 \u{20BD}")
+        let a2 = makeArticleHTML(id: "222", title: "2-комн. квартира, 54 м², 8/12 этаж", price: "8 500 000 \u{20BD}")
+        let html = "<html><body>\(a1)\(a2)</body></html>"
+        let results = CianDataExtractor.extractData(from: html)
+        #expect(results.count == 2)
+        #expect(results.map(\.id).contains("111"))
+        #expect(results.map(\.id).contains("222"))
+    }
+
+    @Test("URL is absolute — relative href gets prefixed")
+    func extractOffers_relativeURL() throws {
+        let articleHTML = """
+        <article data-name="CardComponent">
+          <a href="/sale/flat/777777/"></a>
+          <div data-name="TitleComponent">Студия, 20 м², 2/5 этаж</div>
+          <div data-name="ContentRow">3 000 000 \u{20BD}</div>
+        </article>
+        """
+        let results = CianDataExtractor.extractData(from: "<html><body>\(articleHTML)</body></html>")
+        let apt = try #require(results.first)
+        #expect(apt.url.hasPrefix("https://www.cian.ru"))
+    }
+}
+
+// MARK: - CianDetailParser: Views Regex
+
+@Suite("CianDetailParser — Views Regex")
+@MainActor
+struct CianDetailParserViewsTests {
+
+    // Access the internal parsing via public API:
+    // Create an apartment, build wrapped HTML, call parseDetailJSON.
+    private func makeApartment() -> Apartment {
+        Apartment(id: "test", title: "Тест", price: 5_000_000, url: "", address: "Москва")
+    }
+
+    /// Builds a minimal __NEXT_DATA__ JSON that includes a views-formatted string.
+    private func makeJSON(viewsString: String) -> String {
+        """
+        {"props":{"pageProps":{"initialState":{"offerData":{"offer":{"stats":{"totalViewsFormattedString":"\(viewsString)"}}}}}}}
+        """
+    }
+
+    @Test("Parses views with comma separator")
+    func views_commaSeparator() throws {
+        let apt = makeApartment()
+        CianDetailParser.parseDetailJSON(jsonString: makeJSON(viewsString: "1 709 просмотров, 44 за сегодня"), apartment: apt)
+        #expect(apt.viewsTotal == 1709)
+        #expect(apt.viewsToday == 44)
+    }
+
+    @Test("Parses views with middle-dot separator")
+    func views_dotSeparator() throws {
+        let apt = makeApartment()
+        CianDetailParser.parseDetailJSON(jsonString: makeJSON(viewsString: "446 просмотров · 513 за сегодня"), apartment: apt)
+        #expect(apt.viewsTotal == 446)
+        #expect(apt.viewsToday == 513)
+    }
+
+    @Test("Returns nil viewsToday when string absent")
+    func views_absent() {
+        let apt = makeApartment()
+        let json = """
+        {"props":{"pageProps":{"initialState":{"offerData":{"offer":{}}}}}}
+        """
+        CianDetailParser.parseDetailJSON(jsonString: json, apartment: apt)
+        #expect(apt.viewsToday == nil)
+    }
+}
+
 // MARK: - FlipAnalyzer: Demand
 
 @Suite("FlipAnalyzer — Demand")

@@ -8,6 +8,29 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Parsing Mode
+
+enum ParsingMode: String, CaseIterable {
+    case parallel   = "parallel"
+    case sequential = "sequential"
+
+    var label: String {
+        switch self {
+        case .parallel:   return "Параллельный"
+        case .sequential: return "Последовательный"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .parallel:
+            return "Сначала парсит все ссылки, затем детально разбирает найденные квартиры."
+        case .sequential:
+            return "Парсит одну ссылку, полностью разбирает её квартиры, затем переходит к следующей."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ContentViewModel {
@@ -42,9 +65,12 @@ final class ContentViewModel {
 
     // MARK: - State
 
-    var urlString: String = "https://www.cian.ru/cat.php?deal_type=sale&electronic_trading=2&engine_version=2&flat_share=2&floornl=1&foot_min=7&is_first_floor=0&minfloorn=5&offer_type=flat&only_foot=2&region=1&sort=price_object_order"
     var isScraping: Bool = false
     var currentURL: URL?
+    /// Ordered list of search URLs loaded at scraping start. Cycled infinitely.
+    private(set) var searchURLs: [String] = []
+    /// Index into searchURLs for the URL currently being fetched.
+    private(set) var currentURLIndex: Int = 0
     var log: String = "Готов к работе"
     var showCaptchaAlert: Bool = false
     var webViewHeight: CGFloat = 300
@@ -59,6 +85,28 @@ final class ContentViewModel {
 
     /// When enabled, newly found apartments are automatically queued for detail parsing.
     var autoDetailParsing: Bool = false
+
+    /// When enabled, re-checks stale apartments for removal/price changes when the detail queue drains.
+    var autoCheckActivity: Bool = false
+
+    /// Apartments not seen in search for this many days are considered stale.
+    var staleDaysThreshold: Int = 3
+
+    /// Prevents immediate re-loop: true while a stale-check batch is in progress.
+    private var staleCheckInProgress = false
+
+    /// In sequential mode: set after a search page is processed and detail parsing started.
+    /// onDetailParsingComplete will call onPageCompleted() when this is true.
+    private var pendingPageCompletion = false
+
+    /// Current parsing mode — synced from AppStorage via ContentView.
+    var parsingMode: ParsingMode = .parallel
+
+    /// Okrugs currently shown. Empty = show all.
+    var activeOkrugFilters: Set<String> = []
+
+    /// Sorted list of all okrugs present in the current apartment dataset.
+    private(set) var availableOkrugs: [String] = []
 
     // MARK: - Init
 
@@ -90,31 +138,43 @@ final class ContentViewModel {
 
     /// Debounced entry point — coalesces rapid calls (e.g. during scraping) into a single rebuild.
     /// During active scraping the delay is longer since the user isn't inspecting the list.
-    func scheduleRefresh(from apartments: [Apartment], thresholds: DemandThresholds) {
+    func scheduleRefresh(from apartments: [Apartment], thresholds: DemandThresholds, metroBanlist: Set<String>) {
         refreshTask?.cancel()
         let delay: Duration = isScraping ? .seconds(1) : .milliseconds(250)
         refreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled else { return }
-            self.refreshScores(from: apartments, thresholds: thresholds)
+            self.refreshScores(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
     }
 
     /// Rebuild the score cache synchronously. Prefer scheduleRefresh for UI-triggered calls.
-    func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds) {
+    func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds, metroBanlist: Set<String>) {
         // Build benchmark from ALL apartments (not just visible ones) for accurate pricing
         let benchmark = flipAnalyzer.buildBenchmark(from: apartments)
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
         checkWaitingConditions(apartments: apartments, benchmark: benchmark, thresholds: thresholds)
 
+        // Compute available okrugs — exclude "Москва" (it's a fallback, not a real filter target)
+        availableOkrugs = Array(Set(apartments.compactMap { okrug -> String? in
+            guard let o = okrug.okrug, o != "Москва" else { return nil }
+            return o
+        })).sorted()
+
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
             guard activeStatusFilters.contains(apt.status) else { return nil }
+            // Skip apartments whose nearest metro is in the banlist
+            if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
+            // Skip apartments not in the active okrug filter (empty set = show all)
+            if !activeOkrugFilters.isEmpty {
+                guard let okrug = apt.okrug, activeOkrugFilters.contains(okrug) else { return nil }
+            }
             return (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
         }
 
-        cachedScores = pairs.sorted { lhs, rhs in
+        let sorted = pairs.sorted { lhs, rhs in
             switch sortOrder {
             case .flipScore:   return lhs.1.totalScore > rhs.1.totalScore
             case .price:       return lhs.0.price < rhs.0.price
@@ -122,6 +182,7 @@ final class ContentViewModel {
             case .dateAdded:   return lhs.0.dateAdded > rhs.0.dateAdded
             }
         }
+        cachedScores = sorted
     }
 
     /// Toggle a status in the active filter set.
@@ -130,6 +191,15 @@ final class ContentViewModel {
             activeStatusFilters.remove(status)
         } else {
             activeStatusFilters.insert(status)
+        }
+    }
+
+    /// Toggle an okrug in the active okrug filter set.
+    func toggleOkrugFilter(_ okrug: String) {
+        if activeOkrugFilters.contains(okrug) {
+            activeOkrugFilters.remove(okrug)
+        } else {
+            activeOkrugFilters.insert(okrug)
         }
     }
 
@@ -156,7 +226,13 @@ final class ContentViewModel {
 
     // MARK: - Scraping Control
 
-    func startScraping() {
+    func startScraping(urls: [String]) {
+        guard !urls.isEmpty else {
+            log = "❌ Список ссылок пуст — добавьте URL в Настройках"
+            return
+        }
+        searchURLs = urls
+        currentURLIndex = 0
         currentPage = 1
         loadNextPage()
     }
@@ -165,41 +241,53 @@ final class ContentViewModel {
         isScraping = false
         currentURL = nil
         currentPage = 1
+        currentURLIndex = 0
     }
 
     private func loadNextPage() {
-        let baseURL = URLBuilder.extractBaseURL(from: urlString)
+        guard !searchURLs.isEmpty else { return }
+        let urlStr = searchURLs[currentURLIndex]
+        let baseURL = URLBuilder.extractBaseURL(from: urlStr)
         guard let url = URLBuilder.buildSearchURL(baseURL: baseURL, page: currentPage) else {
-            log = "❌ Некорректный URL"
+            log = "❌ Некорректный URL: \(urlStr)"
             return
         }
 
         currentURL = url
         isScraping = true
 
+        let urlLabel = "\(currentURLIndex + 1)/\(searchURLs.count)"
         if enablePagination {
-            log = "📄 Загрузка страницы \(currentPage) из \(maxPages)... (\(url.absoluteString))"
+            log = "📄 Ссылка \(urlLabel), страница \(currentPage)/\(maxPages)..."
         } else {
-            log = "📄 Загрузка страницы... (\(url.absoluteString))"
+            log = "📄 Ссылка \(urlLabel)..."
         }
-
         print("🔗 Загрузка URL: \(url.absoluteString)")
     }
 
     private func onPageCompleted() {
         if enablePagination && currentPage < maxPages {
+            // More pages for the current URL
             currentPage += 1
             let delay = Double.random(in: 5.0...10.0)
-            log = "⏳ Ожидание \(String(format: "%.1f", delay)) сек перед загрузкой страницы \(currentPage) из \(maxPages)..."
-
-            Task {
+            log = "⏳ Ожидание \(String(format: "%.1f", delay)) сек перед стр. \(currentPage)/\(maxPages)..."
+            Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                loadNextPage()
+                guard let self, self.isScraping else { return }
+                self.loadNextPage()
             }
         } else {
-            isScraping = false
-            currentURL = nil
-            log = enablePagination ? "✅ Парсинг завершён! Обработано страниц: \(currentPage)" : log
+            // Advance to the next URL, wrapping around (infinite cycle)
+            currentPage = 1
+            currentURLIndex = (currentURLIndex + 1) % searchURLs.count
+            let delay = Double.random(in: 5.0...10.0)
+            let isNewCycle = currentURLIndex == 0
+            log = "⏳ \(isNewCycle ? "Новый цикл" : "Следующая ссылка \(currentURLIndex + 1)/\(searchURLs.count)") через \(String(format: "%.1f", delay)) сек..."
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard let self, self.isScraping else { return }
+                self.loadNextPage()
+            }
         }
     }
 
@@ -233,19 +321,32 @@ final class ContentViewModel {
                     if updateExistingApartment(existing, with: apartment) {
                         updatedCount += 1
                     }
-                } else {
+                    // Populate okrug for apartments that were parsed before this field existed
+                    if existing.okrug == nil {
+                        existing.okrug = flipAnalyzer.extractOkrug(from: existing.address)
+                    }
+                } else if apartment.price > 0 {
+                    // Don't insert apartments with price = 0 — parser failure, not a real listing
+                    apartment.okrug = flipAnalyzer.extractOkrug(from: apartment.address)
                     modelContext.insert(apartment)
                     newlyInserted.append(apartment)
                     newCount += 1
                 }
             }
 
+            log = "✅ Успешно! Новых: \(newCount) | Обновлено: \(updatedCount) | Всего на странице: \(foundApartments.count)"
+
             // Auto-enqueue new apartments for detail parsing if enabled
             if autoDetailParsing && !newlyInserted.isEmpty {
                 detailLoader.enqueue(newlyInserted)
+                // In sequential mode: wait for this batch to finish before moving to next URL
+                if parsingMode == .sequential {
+                    pendingPageCompletion = true
+                    log += " — ожидаю детального парсинга..."
+                    return
+                }
             }
 
-            log = "✅ Успешно! Новых: \(newCount) | Обновлено: \(updatedCount) | Всего на странице: \(foundApartments.count)"
             onPageCompleted()
         } else {
             log = "⚠️ Квартиры не найдены. Возможно, блокировка или капча."
@@ -256,9 +357,17 @@ final class ContentViewModel {
     private func updateExistingApartment(_ existing: Apartment, with new: Apartment) -> Bool {
         var hasChanges = false
 
-        if existing.price != new.price {
+        // Always mark as seen in this search run
+        existing.lastSeenInSearch = Date()
+
+        // Only update price if the new value is valid (> 0).
+        // HTML fallback parsers often return price = 0 when they can't extract the price —
+        // we must never overwrite a real price with a parser failure.
+        if new.price > 0 && existing.price != new.price {
             existing.price = new.price
             existing.priceHistory.append(PricePoint(price: new.price, date: Date()))
+            // Price changed — detail data may be stale, allow re-parsing
+            existing.isDetailedParsed = false
             hasChanges = true
             print("💰 Цена изменилась для квартиры \(existing.id): \(existing.price) → \(new.price)")
         }
@@ -297,18 +406,59 @@ final class ContentViewModel {
     // MARK: - Detail Parsing
 
     func startDetailParsing(apartments: [Apartment]) {
+        staleCheckInProgress = false
         log = "🔍 Запуск детального парсинга..."
         detailLoader.loadDetailPages(for: apartments)
     }
 
+    /// Queues apartments not seen in search for staleDaysThreshold+ days for re-check.
+    /// Skips .ban and .deal — those are terminal statuses.
+    func checkStaleApartments(from apartments: [Apartment]) {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -staleDaysThreshold, to: Date()) ?? Date()
+        let stale = apartments.filter { apt in
+            apt.lastSeenInSearch < cutoff && apt.status != .ban && apt.status != .deal
+        }
+        guard !stale.isEmpty else {
+            log = "✅ Нет устаревших квартир (порог: \(staleDaysThreshold) дн.)"
+            return
+        }
+        log = "🔍 Проверяю активность \(stale.count) кв. (не видели > \(staleDaysThreshold) дн.)..."
+        staleCheckInProgress = true
+        detailLoader.loadDetailPages(for: stale)
+    }
+
     private func onDetailParsingComplete() {
-        log = "✅ Детальный парсинг завершён!"
         do {
             try modelContext.save()
-            log = "💾 Данные сохранены"
             modelContext.processPendingChanges()
         } catch {
             log = "❌ Ошибка сохранения: \(error.localizedDescription)"
+            staleCheckInProgress = false
+            pendingPageCompletion = false
+            return
+        }
+
+        // Sequential mode: detail batch for one URL finished — now advance to next URL
+        if pendingPageCompletion {
+            pendingPageCompletion = false
+            log = "✅ Детальный парсинг блока завершён — переходим к следующей ссылке..."
+            onPageCompleted()
+            return
+        }
+
+        // If we just finished a stale check — don't immediately re-trigger.
+        // If autoCheckActivity is on and this was a regular parsing batch — run stale check next.
+        if staleCheckInProgress {
+            staleCheckInProgress = false
+            log = "✅ Проверка активности завершена"
+        } else if autoCheckActivity {
+            log = "✅ Детальный парсинг завершён — запускаю проверку активности..."
+            let descriptor = FetchDescriptor<Apartment>()
+            if let all = try? modelContext.fetch(descriptor) {
+                checkStaleApartments(from: all)
+            }
+        } else {
+            log = "✅ Детальный парсинг завершён"
         }
     }
 

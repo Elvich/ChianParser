@@ -20,19 +20,21 @@ struct ApartmentDetailView: View {
                 imagesGalleryView
 
                 VStack(alignment: .leading, spacing: 15) {
-                    headerView
+                    HStack{
+                        headerView
+                        Spacer()
+                        openLinkButton
+                    }
                     metroView
-                    statusAndNotesView
                     waitingConditionView
-                    statsHighlightView
                     flipScoreView
                     currentPriceView
                     priceHistoryView
                     characteristicsGrid
                     descriptionView
+                    statusAndNotesView
                     sellerView
                     metadataView
-                    openLinkButton
                 }
                 .padding(.horizontal)
             }
@@ -238,6 +240,7 @@ struct ApartmentDetailView: View {
         .padding()
         .background(Color(.systemGray).opacity(0.05))
         .cornerRadius(12)
+        .padding(.horizontal)
     }
 
     // MARK: - Продавец
@@ -264,11 +267,13 @@ struct ApartmentDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                    Spacer()
                 }
             }
             .padding()
             .background(Color(.systemGray).opacity(0.05))
             .cornerRadius(12)
+            .padding(.horizontal)
         }
     }
 
@@ -497,7 +502,6 @@ struct ApartmentDetailView: View {
                 HStack {
                     Image(systemName: "safari")
                     Text("Открыть на Циан")
-                    Spacer()
                     Image(systemName: "arrow.up.forward")
                 }
                 .padding()

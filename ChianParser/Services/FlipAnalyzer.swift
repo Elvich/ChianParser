@@ -174,25 +174,42 @@ private extension FlipAnalyzer {
     }
 }
 
-// MARK: - Helpers
+// MARK: - Okrug Extraction
 
-private extension FlipAnalyzer {
+extension FlipAnalyzer {
 
-    func median(of values: [Double]) -> Double {
-        let sorted = values.sorted()
-        let mid = sorted.count / 2
-        return sorted.count.isMultiple(of: 2)
-            ? (sorted[mid - 1] + sorted[mid]) / 2
-            : sorted[mid]
-    }
-
-    /// Extract Moscow okrug from an address string.
+    /// Extract the Moscow okrug name from an address string.
+    /// Order matters: 4-char abbreviations must be checked before their 3-char substrings
+    /// (e.g. "ЮВАО" contains "ВАО", "СЗАО" contains "ЗАО").
     func extractOkrug(from address: String) -> String {
+        // Pass 1: abbreviations (4-char before 3-char to avoid substring collision)
         let okrugs = [
-            "ЦАО", "САО", "СВАО", "ВАО", "ЮВАО", "ЮАО", "ЮЗАО", "ЗАО", "СЗАО",
+            "СВАО", "ЮВАО", "ЮЗАО", "СЗАО",    // 4-char — checked first
+            "ЦАО", "САО", "ВАО", "ЮАО", "ЗАО", // 3-char
             "ТАО", "НАО", "Зеленоград"
         ]
         for okrug in okrugs where address.contains(okrug) {
+            return okrug
+        }
+
+        // Pass 2: full Russian names (Cian often uses full names in geo.address JSON).
+        // Compound names (e.g. "Северо-Восточный") contain the simple name ("Восточный")
+        // as a suffix, so compound ones must come first.
+        let fullNames: [(String, String)] = [
+            ("Северо-Восточный административный округ", "СВАО"),
+            ("Юго-Восточный административный округ",   "ЮВАО"),
+            ("Северо-Западный административный округ", "СЗАО"),
+            ("Юго-Западный административный округ",    "ЮЗАО"),
+            ("Центральный административный округ",     "ЦАО"),
+            ("Северный административный округ",        "САО"),
+            ("Восточный административный округ",       "ВАО"),
+            ("Южный административный округ",           "ЮАО"),
+            ("Западный административный округ",        "ЗАО"),
+            ("Троицкий административный округ",        "ТАО"),
+            ("Новомосковский административный округ",  "НАО"),
+            ("Зеленоградский административный округ",  "Зеленоград"),
+        ]
+        for (fullName, okrug) in fullNames where address.contains(fullName) {
             return okrug
         }
         // Full mapping of Moscow districts to okrugs
@@ -255,4 +272,18 @@ private extension FlipAnalyzer {
         }
         return "Москва"
     }
+}
+
+// MARK: - Helpers
+
+private extension FlipAnalyzer {
+
+    func median(of values: [Double]) -> Double {
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        return sorted.count.isMultiple(of: 2)
+            ? (sorted[mid - 1] + sorted[mid]) / 2
+            : sorted[mid]
+    }
+
 }

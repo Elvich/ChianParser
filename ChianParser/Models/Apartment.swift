@@ -91,9 +91,13 @@ final class Apartment {
         }
     }
     
+    // Географическая классификация (вычисляется при парсинге, хранится для фильтрации)
+    var okrug: String? = nil    // Административный округ Москвы (ЦАО, ЮВАО и т.д.)
+
     // Служебные даты
     var dateAdded: Date         // Когда мы впервые нашли это объявление
     var lastUpdate: Date        // Когда парсер последний раз обновлял данные
+    var lastSeenInSearch: Date  // Когда объявление последний раз появлялось в поиске
     
     // История изменения цен (связанная модель)
     @Relationship(deleteRule: .cascade) var priceHistory: [PricePoint] = []
@@ -106,6 +110,7 @@ final class Apartment {
         self.address = address
         self.dateAdded = Date()
         self.lastUpdate = Date()
+        self.lastSeenInSearch = Date()
         self.priceHistory = [PricePoint(price: price, date: Date())]
     }
 }

@@ -128,7 +128,7 @@ struct FlipScoreCard: View {
 
             if let vpd = result.viewsPerDay {
                 Text(String(format: "%.0f просм./день", vpd))
-                    .font(.caption)
+                    .font(.subheadline.bold())
                     .foregroundStyle(.secondary)
             }
         }

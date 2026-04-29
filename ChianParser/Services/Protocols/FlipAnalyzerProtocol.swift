@@ -11,6 +11,9 @@ protocol FlipAnalyzerProtocol {
 
     /// Build a benchmark context from a collection of apartments (computes median price/m² per okrug).
     func buildBenchmark(from apartments: [Apartment]) -> BenchmarkContext
+
+    /// Extract the Moscow okrug name from an address string (e.g. "ЮВАО", "ЦАО").
+    func extractOkrug(from address: String) -> String
 }
 
 /// Pre-computed market benchmark derived from a DB snapshot.

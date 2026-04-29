@@ -12,135 +12,268 @@ import SwiftSoup
 final class CianDataExtractor {
     
     // MARK: - Единая точка входа
-    /// Извлекает данные о квартирах из HTML страницы
-    /// Приоритет: JSON из __NEXT_DATA__ → Fallback: SwiftSoup HTML парсинг
-    static func extractData(from html: String) -> [Apartment] {
-        // 1. Пытаемся извлечь JSON (ПРИОРИТЕТ)
-        if let apartments = tryExtractFromJSON(html) {
-            print("✅ Данные извлечены из JSON (__NEXT_DATA__)")
+    /// Извлекает данные о квартирах.
+    /// Принимает либо "__NEXT_DATA__:<json>" (прямой JSON из JS), либо полный HTML.
+    /// Приоритет: прямой JSON → JSON из HTML → HTML парсинг
+    static func extractData(from input: String) -> [Apartment] {
+        // Fast path: XHR/fetch intercepted API response
+        let apiPrefix = "__API__:"
+        if input.hasPrefix(apiPrefix) {
+            let jsonString = String(input.dropFirst(apiPrefix.count))
+            if let apartments = parseAPIResponseJSON(jsonString), !apartments.isEmpty {
+                print("✅ Данные извлечены из перехваченного API-ответа (\(apartments.count) шт.)")
+                return apartments
+            }
+            // Maybe the string is actually __NEXT_DATA__ format — try it
+            if let apartments = parseNextDataJSON(jsonString), !apartments.isEmpty {
+                return apartments
+            }
+            print("⚠️ API-ответ получен но не распознан")
+            return []
+        }
+
+        // Fast path: CianWebView extracted __NEXT_DATA__ directly via JS
+        let prefix = "__NEXT_DATA__:"
+        if input.hasPrefix(prefix) {
+            let jsonString = String(input.dropFirst(prefix.count))
+            if let apartments = parseNextDataJSON(jsonString), !apartments.isEmpty {
+                print("✅ Данные извлечены из JSON (__NEXT_DATA__, прямой JS)")
+                return apartments
+            }
+            print("⚠️ __NEXT_DATA__ получен но не распознан — возвращаем пустой результат")
+            return []
+        }
+
+        // Slow path: full HTML received — try JSON first, then HTML fallback
+        if let apartments = tryExtractFromJSON(input) {
+            print("✅ Данные извлечены из JSON (__NEXT_DATA__, через HTML)")
             return apartments
         }
-        
-        // 2. Fallback: классический HTML парсинг через SwiftSoup
+
         print("⚠️ JSON не найден, используем HTML парсинг (fallback)")
-        return extractOffersFromHTML(from: html)
+        return extractOffersFromHTML(from: input)
     }
     
-    // MARK: - JSON Extraction (Основной метод)
-    
+    // MARK: - JSON Extraction
+
+    /// Parse a raw Cian API response JSON (captured via XHR/fetch interception).
+    /// Cian API responses contain offer arrays under various paths — we search flexibly.
+    private static func parseAPIResponseJSON(_ jsonString: String) -> [Apartment]? {
+        guard let jsonData = jsonString.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: jsonData) else {
+            return nil
+        }
+
+        // Try to find an array of offer objects containing "bargainTerms"
+        let results = findOffersArray(in: root)
+        guard !results.isEmpty else {
+            print("⚠️ API JSON: массив объявлений не найден")
+            return nil
+        }
+
+        print("✅ API JSON: \(results.count) объявлений")
+
+        var apartments: [Apartment] = []
+        for item in results {
+            guard let idNum = extractNumber(item["id"]) else { continue }
+            let id = "\(idNum)"
+
+            let title = (item["title"] as? String)
+                ?? (item["fullName"] as? String)
+                ?? "Квартира \(id)"
+
+            let bargainTerms = item["bargainTerms"] as? [String: Any]
+            let price = extractInt(bargainTerms?["price"])
+                ?? extractInt(bargainTerms?["priceTotal"])
+                ?? 0
+
+            let fullUrl = (item["fullUrl"] as? String) ?? ""
+
+            var address = ""
+            if let geo = item["geo"] as? [String: Any] {
+                if let addressArray = geo["address"] as? [[String: Any]] {
+                    address = addressArray.compactMap {
+                        ($0["fullName"] as? String) ?? ($0["title"] as? String) ?? ($0["name"] as? String)
+                    }.joined(separator: ", ")
+                }
+                if address.isEmpty {
+                    address = (geo["userInputAddress"] as? String) ?? (geo["displayAddress"] as? String) ?? ""
+                }
+            }
+            if address.isEmpty {
+                address = (item["displayAddress"] as? String) ?? (item["address"] as? String) ?? ""
+            }
+
+            let apartment = Apartment(
+                id: id,
+                title: title,
+                price: price,
+                url: fullUrl,
+                address: address.isEmpty ? "Адрес не указан" : address
+            )
+
+            apartment.area = extractDouble(item["totalArea"])
+            apartment.roomsCount = extractInt(item["roomsCount"])
+            apartment.floor = extractInt(item["floorNumber"])
+
+            if let building = item["building"] as? [String: Any] {
+                apartment.totalFloors = extractInt(building["floorsCount"])
+                apartment.houseMaterial = building["materialType"] as? String
+            }
+
+            if let geo = item["geo"] as? [String: Any],
+               let undergrounds = geo["undergrounds"] as? [[String: Any]],
+               let nearest = undergrounds.first {
+                apartment.metro = (nearest["name"] as? String) ?? (nearest["title"] as? String)
+                if let time = extractInt(nearest["travelTime"]) ?? extractInt(nearest["time"]) ?? extractInt(nearest["distance"]), time > 0 {
+                    apartment.metroDistance = time
+                }
+                apartment.metroTransportType = (nearest["travelType"] as? String) ?? (nearest["transportType"] as? String)
+            }
+
+            apartments.append(apartment)
+        }
+
+        return apartments.isEmpty ? nil : apartments
+    }
+
+    /// Recursively search any JSON value for an array of offer dicts (containing "bargainTerms").
+    private static func findOffersArray(in value: Any, depth: Int = 0) -> [[String: Any]] {
+        guard depth < 6 else { return [] }
+
+        if let array = value as? [[String: Any]] {
+            // Check if this is an array of offer objects
+            let hasOffers = array.contains { $0["bargainTerms"] != nil || $0["id"] != nil && $0["fullUrl"] != nil }
+            if hasOffers { return array }
+        }
+
+        if let dict = value as? [String: Any] {
+            // Prioritise known Cian API keys
+            for key in ["offers", "results", "items", "data", "offersSerialized", "list"] {
+                if let child = dict[key] {
+                    let found = findOffersArray(in: child, depth: depth + 1)
+                    if !found.isEmpty { return found }
+                }
+            }
+            // Generic search over all values
+            for (_, child) in dict {
+                let found = findOffersArray(in: child, depth: depth + 1)
+                if !found.isEmpty { return found }
+            }
+        }
+
+        return []
+    }
+
+    /// Parse a raw __NEXT_DATA__ JSON string (already extracted from the script tag).
+    private static func parseNextDataJSON(_ jsonString: String) -> [Apartment]? {
+        guard let jsonData = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return nil
+        }
+        return parseNextDataObject(jsonObject)
+    }
+
+    /// Extract __NEXT_DATA__ from full HTML via SwiftSoup, then parse.
     private static func tryExtractFromJSON(_ html: String) -> [Apartment]? {
         do {
             let doc = try SwiftSoup.parse(html)
             guard let jsonTag = try doc.select("script#__NEXT_DATA__").first() else { return nil }
-            let jsonString = jsonTag.data()
-            
-            guard let jsonData = jsonString.data(using: .utf8),
-                  let jsonObject = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return nil }
-            
-            guard let props = jsonObject["props"] as? [String: Any] else {
-                print("⚠️ SEARCH JSON: нет 'props'"); return nil
-            }
-            guard let pageProps = props["pageProps"] as? [String: Any] else {
-                print("⚠️ SEARCH JSON: нет 'pageProps'"); return nil
-            }
-            guard let initialState = pageProps["initialState"] as? [String: Any] else {
-                print("⚠️ SEARCH JSON: нет 'initialState', ключи pageProps:", Array(pageProps.keys).sorted().prefix(8).joined(separator: ", "))
-                return nil
-            }
-            guard let offers = initialState["offers"] as? [String: Any] else {
-                print("⚠️ SEARCH JSON: нет 'offers', ключи initialState:", Array(initialState.keys).sorted().prefix(12).joined(separator: ", "))
-                return nil
-            }
-            guard let results = offers["results"] as? [[String: Any]] else {
-                print("⚠️ SEARCH JSON: нет 'results', ключи offers:", Array(offers.keys).sorted().prefix(8).joined(separator: ", "))
-                return nil
-            }
-            
-            print("✅ SEARCH JSON: \(results.count) объявлений")
-
-            
-            var apartments: [Apartment] = []
-            
-            for item in results {
-                // ID может прийти как Int или Double — используем extractInt
-                guard let idNum = extractNumber(item["id"]) else { continue }
-                let id = "\(idNum)"
-                
-                // Заголовок: "title" или "fullName" (оба содержат тип жилья, площадь, этаж)
-                let title = (item["title"] as? String)
-                    ?? (item["fullName"] as? String)
-                    ?? "Квартира \(id)"
-                
-                // Цена: bargainTerms.price — ВАЖНО: приходит как NSNumber, не всегда как Int
-                let bargainTerms = item["bargainTerms"] as? [String: Any]
-                let price = extractInt(bargainTerms?["price"])
-                    ?? extractInt(bargainTerms?["priceTotal"])
-                    ?? 0
-                
-                // Ссылка
-                let fullUrl = (item["fullUrl"] as? String) ?? ""
-                
-                // Адрес (максимально агрессивный поиск)
-                var address = ""
-                if let geo = item["geo"] as? [String: Any] {
-                    if let addressArray = geo["address"] as? [[String: Any]] {
-                        address = addressArray.compactMap {
-                            ($0["fullName"] as? String) ?? ($0["title"] as? String) ?? ($0["name"] as? String)
-                        }.joined(separator: ", ")
-                    }
-                    if address.isEmpty {
-                        address = (geo["userInputAddress"] as? String) ?? (geo["displayAddress"] as? String) ?? ""
-                    }
-                }
-                
-                if address.isEmpty {
-                    address = (item["displayAddress"] as? String) ?? (item["userInputAddress"] as? String) ?? (item["address"] as? String) ?? ""
-                }
-                
-                let apartment = Apartment(
-                    id: id,
-                    title: title,
-                    price: price,
-                    url: fullUrl,
-                    address: address.isEmpty ? "Адрес не указан" : address
-                )
-                
-                // Дополнительные данные из поиска — totalArea приходит как Double, не String
-                apartment.area = extractDouble(item["totalArea"])
-                apartment.roomsCount = extractInt(item["roomsCount"])
-                apartment.floor = extractInt(item["floorNumber"])
-                
-                // Этажность дома (если есть)
-                if let building = item["building"] as? [String: Any] {
-                    apartment.totalFloors = extractInt(building["floorsCount"])
-                    if apartment.houseMaterial == nil {
-                        apartment.houseMaterial = building["materialType"] as? String
-                    }
-                }
-
-                // Метро из поискового JSON (ближайшая станция)
-                if let geo = item["geo"] as? [String: Any],
-                   let undergrounds = geo["undergrounds"] as? [[String: Any]],
-                   let nearest = undergrounds.first {
-                    apartment.metro = (nearest["name"] as? String) ?? (nearest["title"] as? String)
-                    // Fields: travelTime (minutes), travelType ("walk"/"transport")
-                    // Treat time == 0 as "not specified" — Cian uses 0 as a sentinel value
-                    if let time = extractInt(nearest["travelTime"]) ?? extractInt(nearest["time"]) ?? extractInt(nearest["distance"]), time > 0 {
-                        apartment.metroDistance = time
-                    }
-                    apartment.metroTransportType = (nearest["travelType"] as? String) ?? (nearest["transportType"] as? String)
-                }
-
-                apartments.append(apartment)
-            }
-
-            
-            return apartments.isEmpty ? nil : apartments
-            
+            return parseNextDataJSON(jsonTag.data())
         } catch {
-            print("❌ JSON Parsing Error: \(error)")
+            print("❌ SwiftSoup error: \(error)")
             return nil
         }
+    }
+
+    /// Navigate props → pageProps → initialState → offers → results and build Apartment objects.
+    private static func parseNextDataObject(_ jsonObject: [String: Any]) -> [Apartment]? {
+        guard let props = jsonObject["props"] as? [String: Any] else {
+            print("⚠️ SEARCH JSON: нет 'props'"); return nil
+        }
+        guard let pageProps = props["pageProps"] as? [String: Any] else {
+            print("⚠️ SEARCH JSON: нет 'pageProps'"); return nil
+        }
+        guard let initialState = pageProps["initialState"] as? [String: Any] else {
+            print("⚠️ SEARCH JSON: нет 'initialState', ключи pageProps:", Array(pageProps.keys).sorted().prefix(8).joined(separator: ", "))
+            return nil
+        }
+        guard let offers = initialState["offers"] as? [String: Any] else {
+            print("⚠️ SEARCH JSON: нет 'offers', ключи initialState:", Array(initialState.keys).sorted().prefix(12).joined(separator: ", "))
+            return nil
+        }
+        guard let results = offers["results"] as? [[String: Any]] else {
+            print("⚠️ SEARCH JSON: нет 'results', ключи offers:", Array(offers.keys).sorted().prefix(8).joined(separator: ", "))
+            return nil
+        }
+
+        print("✅ SEARCH JSON: \(results.count) объявлений")
+
+        var apartments: [Apartment] = []
+
+        for item in results {
+            guard let idNum = extractNumber(item["id"]) else { continue }
+            let id = "\(idNum)"
+
+            let title = (item["title"] as? String)
+                ?? (item["fullName"] as? String)
+                ?? "Квартира \(id)"
+
+            let bargainTerms = item["bargainTerms"] as? [String: Any]
+            let price = extractInt(bargainTerms?["price"])
+                ?? extractInt(bargainTerms?["priceTotal"])
+                ?? 0
+
+            let fullUrl = (item["fullUrl"] as? String) ?? ""
+
+            var address = ""
+            if let geo = item["geo"] as? [String: Any] {
+                if let addressArray = geo["address"] as? [[String: Any]] {
+                    address = addressArray.compactMap {
+                        ($0["fullName"] as? String) ?? ($0["title"] as? String) ?? ($0["name"] as? String)
+                    }.joined(separator: ", ")
+                }
+                if address.isEmpty {
+                    address = (geo["userInputAddress"] as? String) ?? (geo["displayAddress"] as? String) ?? ""
+                }
+            }
+            if address.isEmpty {
+                address = (item["displayAddress"] as? String) ?? (item["userInputAddress"] as? String) ?? (item["address"] as? String) ?? ""
+            }
+
+            let apartment = Apartment(
+                id: id,
+                title: title,
+                price: price,
+                url: fullUrl,
+                address: address.isEmpty ? "Адрес не указан" : address
+            )
+
+            apartment.area = extractDouble(item["totalArea"])
+            apartment.roomsCount = extractInt(item["roomsCount"])
+            apartment.floor = extractInt(item["floorNumber"])
+
+            if let building = item["building"] as? [String: Any] {
+                apartment.totalFloors = extractInt(building["floorsCount"])
+                if apartment.houseMaterial == nil {
+                    apartment.houseMaterial = building["materialType"] as? String
+                }
+            }
+
+            if let geo = item["geo"] as? [String: Any],
+               let undergrounds = geo["undergrounds"] as? [[String: Any]],
+               let nearest = undergrounds.first {
+                apartment.metro = (nearest["name"] as? String) ?? (nearest["title"] as? String)
+                if let time = extractInt(nearest["travelTime"]) ?? extractInt(nearest["time"]) ?? extractInt(nearest["distance"]), time > 0 {
+                    apartment.metroDistance = time
+                }
+                apartment.metroTransportType = (nearest["travelType"] as? String) ?? (nearest["transportType"] as? String)
+            }
+
+            apartments.append(apartment)
+        }
+
+        return apartments.isEmpty ? nil : apartments
     }
     
     // MARK: - HTML Extraction (Fallback) - переименованный старый метод
@@ -149,62 +282,122 @@ final class CianDataExtractor {
         return extractOffers(from: html)
     }
     
-    // Старый метод (для совместимости)
+    // Парсинг HTML карточек Cian через data-name атрибуты (стабильнее CSS-модульных классов)
     static func extractOffers(from html: String) -> [Apartment] {
         var apartments: [Apartment] = []
-        
+
         do {
             let doc: Document = try SwiftSoup.parse(html)
-            
-            // ПРИМЕЧАНИЕ: [data-name="CardComponent"], [data-mark="MainPrice"], [data-name="AddressItem"]
-            // удалены с сайта Циан. Используем универсальные теги и паттерны классов.
-            //
-            // Ищем карточки по тегу article (семантически стабильно)
             let cards = try doc.select("article")
-            
+            var skippedNoLink = 0, skippedNoID = 0
+
             for card in cards {
-                // Ссылка на объявление (стабильна — содержит /sale/flat/)
-                guard let linkEl = try card.select("a[href*='/sale/flat/']").first() else { continue }
-                let url = try linkEl.attr("href")
-                
-                // Извлекаем ID из URL
-                guard let id = extractID(from: url) else { continue }
-                
-                // Цена: ищем элемент с "₽" в тексте или класс *--price*
-                var priceText = try card.select("[class*='--price--']").first()?.text() ?? ""
-                if priceText.isEmpty {
-                    // Fallback: ищем любой элемент с символом рубля
-                    priceText = try card.select("*").first(where: { (try? $0.text().contains("₽")) == true })?.text() ?? ""
+                // Link: programmatic filter to avoid SwiftSoup *='' selector quirks
+                let allLinks = try card.select("a[href]")
+                guard let linkEl = allLinks.first(where: {
+                    (try? $0.attr("href").contains("/flat/")) == true
+                }) else { skippedNoLink += 1; continue }
+                let rawUrl = try linkEl.attr("href")
+                let url = rawUrl.hasPrefix("http") ? rawUrl : "https://www.cian.ru" + rawUrl
+
+                guard let id = extractID(from: url) else { skippedNoID += 1; continue }
+
+                // Walk all descendants with an explicit for loop — avoids SwiftSoup
+                // Elements.first{} ambiguity with its computed `first` property.
+                var title = ""
+                var priceText = ""
+                var geoLabels: [String] = []
+                var metroText = ""
+
+                for el in try card.select("*") {
+                    guard el.hasAttr("data-name"), let dn = try? el.attr("data-name") else { continue }
+                    switch dn {
+                    case "TitleComponent", "OfferTitle":
+                        if title.isEmpty { title = (try? el.text()) ?? "" }
+                    case "MainPrice":
+                        // Present before React hydration
+                        if priceText.isEmpty { priceText = (try? el.text()) ?? "" }
+                    case "ContentRow":
+                        // After hydration, MainPrice disappears but ContentRow with price remains.
+                        // Pick ContentRow whose text has "₽" but NOT "/м" (to exclude price-per-m²).
+                        if priceText.isEmpty, let t = try? el.text(),
+                           t.contains("₽"), !t.contains("/м") {
+                            priceText = t
+                        }
+                    case "GeoLabel":
+                        if let t = try? el.text() { geoLabels.append(t) }
+                    case "SpecialGeo":
+                        if metroText.isEmpty { metroText = (try? el.text()) ?? "" }
+                    default:
+                        break
+                    }
                 }
+
                 let price = cleanPrice(priceText)
-                
-                // Заголовок: h2, h3 или первый крупный span внутри карточки
-                var title = try card.select("h2, h3").first()?.text() ?? ""
-                if title.isEmpty {
-                    title = try card.select("[class*='--title--'], [class*='--name--']").first()?.text() ?? ""
-                }
-                
-                // Адрес: ищем элементы с типичными паттернами классов
-                var address = try card.select("[class*='--address--']").text()
-                if address.isEmpty {
-                    address = try card.select("[class*='--geo--'], [class*='--location--']").text()
-                }
-                
-                // Создаём объект
+                let address = geoLabels.joined(separator: ", ")
+
                 let apartment = Apartment(
                     id: id,
                     title: title.isEmpty ? "Квартира \(id)" : title,
                     price: price,
-                    url: url.hasPrefix("http") ? url : "https://www.cian.ru" + url,
+                    url: url,
                     address: address.isEmpty ? "Адрес не указан" : address
                 )
-                
+
+                // Area and floor from title: "24,2 м², 23/30 этаж"
+                let areaPattern = #"(\d+[,\.]\d+|\d+)\s*м²"#
+                if let m = title.range(of: areaPattern, options: .regularExpression) {
+                    let areaStr = String(title[m])
+                        .replacingOccurrences(of: "м²", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                        .replacingOccurrences(of: ",", with: ".")
+                    apartment.area = Double(areaStr)
+                }
+                let floorPattern = #"(\d+)/(\d+)\s*этаж"#
+                if let m = title.range(of: floorPattern, options: .regularExpression) {
+                    let parts = String(title[m]).components(separatedBy: "/")
+                    if let f = parts.first.flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) {
+                        apartment.floor = f
+                    }
+                    if let totalPart = parts.last?.components(separatedBy: CharacterSet.letters.union(.whitespaces)).first,
+                       let t = Int(totalPart) {
+                        apartment.totalFloors = t
+                    }
+                }
+
+                // Metro: data-name="SpecialGeo" → "Аннино 6 минут пешком" (SwiftSoup joins \n with space)
+                if !metroText.isEmpty {
+                    // Metro name = everything before the first digit ("Аннино 6 минут пешком" → "Аннино")
+                    if let digitRange = metroText.rangeOfCharacter(from: .decimalDigits) {
+                        let metroName = String(metroText[..<digitRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                        if !metroName.isEmpty { apartment.metro = metroName }
+                    } else {
+                        apartment.metro = metroText.trimmingCharacters(in: .whitespaces)
+                    }
+                    if let timeRange = metroText.range(of: #"(\d+)\s*минут"#, options: .regularExpression) {
+                        let digits = String(metroText[timeRange]).filter { $0.isNumber }
+                        apartment.metroDistance = Int(digits)
+                    }
+                    apartment.metroTransportType = metroText.contains("пешком") ? "walk" : "transport"
+                }
+
+                // Rooms from title
+                let lower = title.lowercased()
+                if lower.contains("студия") {
+                    apartment.roomsCount = 0
+                } else if let rm = title.range(of: #"(\d+)-комн"#, options: .regularExpression) {
+                    let digit = String(title[rm]).filter { $0.isNumber }
+                    apartment.roomsCount = Int(digit)
+                }
+
                 apartments.append(apartment)
             }
+
+            print("✅ HTML парсер: извлечено=\(apartments.count)")
         } catch {
-            print("❌ Error parsing HTML with SwiftSoup: \(error)")
+            print("❌ SwiftSoup error: \(error)")
         }
-        
+
         return apartments
     }
 

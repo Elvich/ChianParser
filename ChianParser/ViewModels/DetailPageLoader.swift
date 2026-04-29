@@ -21,11 +21,12 @@ final class DetailPageLoader: NSObject {
     var totalPages: Int = 0
     var isLoading: Bool = false
     var statusMessage: String = ""
+    var captchaDetected: Bool = false
 
     // MARK: - Dependencies
 
     private let detailParser: any DetailParserProtocol
-    private var webView: WKWebView?
+    private(set) var webView: WKWebView?
 
     // MARK: - Queue
 
@@ -72,12 +73,24 @@ final class DetailPageLoader: NSObject {
         loadNextApartment()
     }
 
-    /// Replaces the queue with a fresh list (used by the manual "Детальный парсинг" button).
+    /// Replaces the pending queue with a fresh list.
+    /// If the loader is already running, the current apartment finishes normally;
+    /// only the waiting queue is replaced. Progress counters are updated accordingly.
     func loadDetailPages(for apartments: [Apartment]) {
-        apartmentsQueue.removeAll()
-        totalPages = 0
-        currentProgress = 0
-        enqueue(apartments)
+        let toAdd = apartments.filter { !$0.isDetailedParsed }
+        if isLoading {
+            // Replace only the pending part of the queue, preserving current progress.
+            apartmentsQueue = toAdd
+            totalPages = currentProgress + toAdd.count
+        } else {
+            apartmentsQueue = toAdd
+            totalPages = toAdd.count
+            currentProgress = 0
+            guard !toAdd.isEmpty else { return }
+            isLoading = true
+            statusMessage = "🔍 Детальный парсинг: \(totalPages) квартир..."
+            loadNextApartment()
+        }
     }
 
     /// Stops loading and clears the queue.
@@ -124,8 +137,71 @@ final class DetailPageLoader: NSObject {
 
 extension DetailPageLoader: WKNavigationDelegate {
 
+    nonisolated func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        Task { @MainActor in
+            // Reset captcha state on every new navigation (user may have solved it)
+            captchaDetected = false
+        }
+    }
+
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
+            // Check for captcha before attempting any extraction
+            let jsCaptchaCheck = """
+            (function() {
+                const hasCaptchaElement = document.querySelector('[data-name="Captcha"]') !== null;
+                const hasCaptchaIframe  = document.querySelector('iframe[src*="captcha"]') !== null;
+                const hasCaptchaTitle   = document.title.toLowerCase().includes('проверка');
+                const hasRecaptcha      = document.querySelector('.g-recaptcha') !== null;
+                return hasCaptchaElement || hasCaptchaIframe || hasCaptchaTitle || hasRecaptcha;
+            })();
+            """
+
+            let captchaResult = await withCheckedContinuation { cont in
+                webView.evaluateJavaScript(jsCaptchaCheck) { result, _ in
+                    cont.resume(returning: (result as? Bool) ?? false)
+                }
+            }
+
+            if captchaResult {
+                captchaDetected = true
+                statusMessage = "⚠️ Капча! Решите её в браузере — парсинг продолжится автоматически"
+                // Don't proceed — wait for next didFinish after user solves captcha
+                return
+            }
+
+            captchaDetected = false
+
+            // Check if the listing has been removed from Cian
+            let jsRemovedCheck = """
+            (function() {
+                const is404        = document.title.includes('404');
+                const isRemoved    = document.querySelector('[data-name="OfferRemoved"]') !== null;
+                const isNotFound   = document.title.toLowerCase().includes('не найден')
+                                  || document.title.toLowerCase().includes('снято');
+                const isErrorPage  = document.querySelector('.error-page') !== null;
+                return is404 || isRemoved || isNotFound || isErrorPage;
+            })();
+            """
+
+            let removedResult = await withCheckedContinuation { cont in
+                webView.evaluateJavaScript(jsRemovedCheck) { result, _ in
+                    cont.resume(returning: (result as? Bool) ?? false)
+                }
+            }
+
+            if removedResult, let apartment = currentApartment {
+                print("🗑️ Объявление снято с продажи: \(apartment.title)")
+                apartment.status = .ban
+                if apartment.notes.isEmpty {
+                    apartment.notes = "Объявление снято с продажи (\(Date().formatted(date: .abbreviated, time: .omitted)))"
+                } else {
+                    apartment.notes += "\nОбъявление снято с продажи (\(Date().formatted(date: .abbreviated, time: .omitted)))"
+                }
+                await scheduleNextApartment()
+                return
+            }
+
             // Wait for Next.js hydration before extracting data
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
 
