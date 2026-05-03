@@ -324,7 +324,24 @@ final class CianDetailParser {
             if let total = apartment.viewsTotal, let today = apartment.viewsToday {
                 print("  📊 Просмотры: сегодня \(today), всего \(total)")
             }
-            
+
+            // 9. Авто-детекция аукциона и внесённого залога
+            let isAuctionFlag = (offerNode["isAuction"] as? Bool) ?? (offerData["isAuction"] as? Bool) ?? false
+            let saleType = ((offerNode["bargainTerms"] as? [String: Any])?["saleType"] as? String)
+                ?? (offerNode["saleType"] as? String)
+                ?? (offerData["saleType"] as? String)
+                ?? ""
+            apartment.isAuction = isAuctionFlag
+                || saleType.lowercased().contains("auction")
+                || apartment.title.lowercased().contains("аукцион")
+                || (apartment.apartmentDescription?.lowercased().contains("аукцион") ?? false)
+
+            let descLower = apartment.apartmentDescription?.lowercased() ?? ""
+            let depositPhrases = ["залог внесен", "залог внесён", "задаток внесен", "задаток внесён",
+                                  "аванс внесен", "аванс внесён", "внесен залог", "внесён залог",
+                                  "внесен задаток", "внесён задаток", "внесен аванс", "внесён аванс"]
+            apartment.isDepositPaid = depositPhrases.contains { descLower.contains($0) }
+
             // Дата публикации
             let publishedDateStr = (offerNode["publishedDate"] as? String)
                 ?? (offerData["publishedDate"] as? String)

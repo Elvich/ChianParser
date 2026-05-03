@@ -56,6 +56,10 @@ final class Apartment {
     // Флаг детального парсинга
     var isDetailedParsed: Bool = false // Был ли выполнен детальный парсинг
 
+    // Авто-детекция особых условий (устанавливается парсером)
+    var isAuction: Bool = false      // Объявление является аукционом
+    var isDepositPaid: Bool = false  // В описании упоминается внесённый залог/задаток
+
     // MARK: - Workflow (статус, заметки, ожидание)
 
     /// Current workflow status (raw string for SwiftData persistence)

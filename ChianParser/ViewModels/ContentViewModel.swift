@@ -102,6 +102,12 @@ final class ContentViewModel {
     /// Current parsing mode — synced from AppStorage via ContentView.
     var parsingMode: ParsingMode = .parallel
 
+    /// When true, auto-detected auction listings are shown. Off by default.
+    var showAuctions: Bool = false
+
+    /// When true, listings with deposit-paid phrases in description are shown. Off by default.
+    var showDeposits: Bool = false
+
     /// Okrugs currently shown. Empty = show all.
     var activeOkrugFilters: Set<String> = []
 
@@ -165,6 +171,9 @@ final class ContentViewModel {
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
             guard activeStatusFilters.contains(apt.status) else { return nil }
+            // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
+            if apt.isAuction && !showAuctions { return nil }
+            if apt.isDepositPaid && !showDeposits { return nil }
             // Skip apartments whose nearest metro is in the banlist
             if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
             // Skip apartments not in the active okrug filter (empty set = show all)

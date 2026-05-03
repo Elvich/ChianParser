@@ -157,11 +157,7 @@ extension DetailPageLoader: WKNavigationDelegate {
             })();
             """
 
-            let captchaResult = await withCheckedContinuation { cont in
-                webView.evaluateJavaScript(jsCaptchaCheck) { result, _ in
-                    cont.resume(returning: (result as? Bool) ?? false)
-                }
-            }
+            let captchaResult = (try? await webView.evaluateJavaScript(jsCaptchaCheck) as? Bool) ?? false
 
             if captchaResult {
                 captchaDetected = true
@@ -184,11 +180,7 @@ extension DetailPageLoader: WKNavigationDelegate {
             })();
             """
 
-            let removedResult = await withCheckedContinuation { cont in
-                webView.evaluateJavaScript(jsRemovedCheck) { result, _ in
-                    cont.resume(returning: (result as? Bool) ?? false)
-                }
-            }
+            let removedResult = (try? await webView.evaluateJavaScript(jsRemovedCheck) as? Bool) ?? false
 
             if removedResult, let apartment = currentApartment {
                 print("🗑️ Объявление снято с продажи: \(apartment.title)")
@@ -227,31 +219,23 @@ extension DetailPageLoader: WKNavigationDelegate {
             })();
             """
 
-            webView.evaluateJavaScript(jsExtractJSON) { [weak self] result, _ in
-                guard let self else { return }
-                Task { @MainActor in
-                    if let jsonString = result as? String,
-                       !jsonString.isEmpty,
-                       let apartment = self.currentApartment {
-                        print("✅ JSON извлечён для: \(apartment.title)")
-                        self.detailParser.parseJSON(jsonString: jsonString, apartment: apartment)
-                        await self.scheduleNextApartment()
-                    } else {
-                        print("⚠️ JSON недоступен, извлекаю HTML fallback...")
-                        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] htmlResult, htmlError in
-                            guard let self else { return }
-                            Task { @MainActor in
-                                if let html = htmlResult as? String,
-                                   let apartment = self.currentApartment {
-                                    self.detailParser.parseHTML(html: html, apartment: apartment)
-                                } else {
-                                    print("❌ Ошибка извлечения HTML: \(htmlError?.localizedDescription ?? "unknown")")
-                                }
-                                await self.scheduleNextApartment()
-                            }
-                        }
-                    }
+            let jsonResult = try? await webView.evaluateJavaScript(jsExtractJSON)
+            if let jsonString = jsonResult as? String,
+               !jsonString.isEmpty,
+               let apartment = currentApartment {
+                print("✅ JSON извлечён для: \(apartment.title)")
+                detailParser.parseJSON(jsonString: jsonString, apartment: apartment)
+                await scheduleNextApartment()
+            } else {
+                print("⚠️ JSON недоступен, извлекаю HTML fallback...")
+                let htmlResult = try? await webView.evaluateJavaScript("document.documentElement.outerHTML")
+                if let html = htmlResult as? String,
+                   let apartment = currentApartment {
+                    detailParser.parseHTML(html: html, apartment: apartment)
+                } else {
+                    print("❌ Ошибка извлечения HTML")
                 }
+                await scheduleNextApartment()
             }
         }
     }

@@ -8,11 +8,11 @@
 
 import Foundation
 
-struct WaitingCondition: Codable, Equatable {
+struct WaitingCondition: Equatable, Sendable {
 
     // MARK: - Condition Type
 
-    enum ConditionType: String, Codable, CaseIterable {
+    enum ConditionType: String, Codable, CaseIterable, Sendable {
         case priceBelow  // Price drops below a threshold (absolute ₽)
         case scoreAbove  // FlipScore rises above a threshold (0-100)
         case timer       // Wait N days from now
@@ -73,5 +73,29 @@ struct WaitingCondition: Codable, Equatable {
             guard let date = targetDate else { return false }
             return Date() >= date
         }
+    }
+}
+
+// MARK: - Codable (nonisolated — prevents Swift 6 main-actor inference)
+
+extension WaitingCondition: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case type, threshold, targetDate, note
+    }
+
+    nonisolated init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type       = try c.decode(ConditionType.self, forKey: .type)
+        threshold  = try c.decodeIfPresent(Double.self, forKey: .threshold)
+        targetDate = try c.decodeIfPresent(Date.self, forKey: .targetDate)
+        note       = (try? c.decodeIfPresent(String.self, forKey: .note)) ?? ""
+    }
+
+    nonisolated func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encodeIfPresent(threshold, forKey: .threshold)
+        try c.encodeIfPresent(targetDate, forKey: .targetDate)
+        try c.encode(note, forKey: .note)
     }
 }

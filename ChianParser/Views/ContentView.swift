@@ -176,6 +176,8 @@ struct ContentBody: View {
         .onChange(of: hot)                           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.showAuctions)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
 
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -551,7 +553,7 @@ private struct StatusFilterBar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(ApartmentStatus.allCases) { status in
+                ForEach(ApartmentStatus.allCases.filter { $0 != .auction && $0 != .deposit }) { status in
                     let isActive = viewModel.activeStatusFilters.contains(status)
                     Button {
                         viewModel.toggleStatusFilter(status)
@@ -567,11 +569,48 @@ private struct StatusFilterBar: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                Divider().frame(height: 16)
+
+                autoFlagChip(
+                    label: "Аукционы",
+                    icon: "hammer",
+                    isShown: viewModel.showAuctions,
+                    color: .brown
+                ) { viewModel.showAuctions.toggle() }
+
+                autoFlagChip(
+                    label: "Залог",
+                    icon: "banknote",
+                    isShown: viewModel.showDeposits,
+                    color: .teal
+                ) { viewModel.showDeposits.toggle() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
         .background(.regularMaterial)
+    }
+
+    private func autoFlagChip(
+        label: String,
+        icon: String,
+        isShown: Bool,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: icon)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(isShown ? color.opacity(0.2) : Color.clear)
+                .foregroundStyle(isShown ? color : .secondary)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(isShown ? color.opacity(0.5) : Color.secondary.opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(isShown ? "Скрыть \(label.lowercased())" : "Показать \(label.lowercased())")
     }
 }
 
