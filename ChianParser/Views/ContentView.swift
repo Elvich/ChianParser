@@ -57,6 +57,11 @@ struct ContentBody: View {
 
     @Environment(\.openSettings) private var openSettings
 
+    @State private var showURLSearch: Bool = false
+    @State private var urlSearchText: String = ""
+    @State private var urlSearchResult: Apartment? = nil   // non-nil → show sheet
+    @State private var urlSearchNotFound: Bool = false
+
     private var thresholds: DemandThresholds {
         DemandThresholds(moderate: moderate, market: market, hot: hot)
     }
@@ -108,6 +113,17 @@ struct ContentBody: View {
                     Label("Очистить данные", systemImage: "trash")
                 }
                 .disabled(apartments.isEmpty)
+
+                Button {
+                    showURLSearch.toggle()
+                    if !showURLSearch {
+                        urlSearchText = ""
+                        urlSearchNotFound = false
+                    }
+                } label: {
+                    Label("Поиск по ссылке", systemImage: showURLSearch ? "magnifyingglass.circle.fill" : "magnifyingglass.circle")
+                }
+                .help("Найти квартиру по ссылке Циан")
 
                 Button {
                     openSettings()
@@ -178,15 +194,53 @@ struct ContentBody: View {
         .onChange(of: viewModel.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.showAuctions)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.activeRoomFilters)   { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
 
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
+                if showURLSearch {
+                    URLSearchBar(
+                        text: $urlSearchText,
+                        notFound: urlSearchNotFound,
+                        onSubmit: {
+                            let result = viewModel.lookupApartment(byURL: urlSearchText)
+                            if let result {
+                                urlSearchResult = result
+                                urlSearchNotFound = false
+                            } else {
+                                urlSearchNotFound = true
+                            }
+                        },
+                        onClose: {
+                            showURLSearch = false
+                            urlSearchText = ""
+                            urlSearchNotFound = false
+                        }
+                    )
+                    Divider()
+                }
                 StatusFilterBar(viewModel: viewModel)
+                if !viewModel.availableRoomCounts.isEmpty {
+                    Divider()
+                    RoomFilterBar(viewModel: viewModel)
+                }
                 if !viewModel.availableOkrugs.isEmpty {
                     Divider()
                     OkrugFilterBar(viewModel: viewModel)
                 }
             }
+        }
+        .sheet(item: $urlSearchResult) { apartment in
+            NavigationStack {
+                let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
+                ApartmentDetailView(apartment: apartment, flipScore: flipScore)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Закрыть") { urlSearchResult = nil }
+                        }
+                    }
+            }
+            .frame(minWidth: 600, minHeight: 500)
         }
         .navigationTitle("Показано: \(viewModel.cachedScores.count)/\(apartments.count)")
         .navigationSubtitle(viewModel.detailLoader.isLoading ? viewModel.detailLoader.statusMessage : "")
@@ -197,19 +251,32 @@ struct ContentBody: View {
     }
 
     private var sortMenu: some View {
-        Menu {
-            ForEach(ContentViewModel.SortOrder.allCases) { order in
-                Button {
-                    viewModel.sortOrder = order
-                } label: {
-                    Label(order.rawValue, systemImage: order.icon)
-                    if viewModel.sortOrder == order {
-                        Image(systemName: "checkmark")
+        HStack(spacing: 4) {
+            Menu {
+                ForEach(ContentViewModel.SortOrder.allCases) { order in
+                    Button {
+                        viewModel.sortOrder = order
+                        viewModel.sortAscending = order.naturalAscending
+                    } label: {
+                        Label(order.rawValue, systemImage: order.icon)
+                        if viewModel.sortOrder == order {
+                            Image(systemName: "checkmark")
+                        }
                     }
                 }
+            } label: {
+                Label("Сортировка: \(viewModel.sortOrder.rawValue)", systemImage: "arrow.up.arrow.down")
             }
-        } label: {
-            Label("Сортировка: \(viewModel.sortOrder.rawValue)", systemImage: "arrow.up.arrow.down")
+
+            Button {
+                viewModel.sortAscending.toggle()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.refreshScores(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+                }
+            } label: {
+                Image(systemName: viewModel.sortAscending ? "arrow.up" : "arrow.down")
+            }
+            .help(viewModel.sortAscending ? "По возрастанию" : "По убыванию")
         }
     }
 
@@ -507,6 +574,81 @@ private struct QuickStatusButtons: View {
     private var quickActions: [ApartmentStatus] {
         let all: [ApartmentStatus] = [.study, .call, .visit, .calc, .deal, .waiting, .ban]
         return all.filter { $0 != apartment.status }
+    }
+}
+
+// MARK: - URL Search Bar
+
+private struct URLSearchBar: View {
+    @Binding var text: String
+    let notFound: Bool
+    let onSubmit: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Вставьте ссылку на квартиру Циан...", text: $text)
+                .textFieldStyle(.plain)
+                .onSubmit(onSubmit)
+            if notFound {
+                Label("Не найдено", systemImage: "questionmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+    }
+}
+
+// MARK: - Room Filter Bar
+
+private struct RoomFilterBar: View {
+    @Bindable var viewModel: ContentViewModel
+
+    private func label(for bucket: Int) -> String {
+        switch bucket {
+        case 0:  return "Студия"
+        case 4:  return "4К+"
+        default: return "\(bucket)К"
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(viewModel.availableRoomCounts, id: \.self) { bucket in
+                    let isActive = viewModel.activeRoomFilters.contains(bucket)
+                    Button {
+                        viewModel.toggleRoomFilter(bucket)
+                    } label: {
+                        Text(label(for: bucket))
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(isActive ? Color.indigo.opacity(0.18) : Color.clear)
+                            .foregroundStyle(isActive ? Color.indigo : .secondary)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(
+                                isActive ? Color.indigo.opacity(0.5) : Color.secondary.opacity(0.3),
+                                lineWidth: 1
+                            ))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .background(.regularMaterial)
     }
 }
 

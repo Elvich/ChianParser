@@ -43,7 +43,7 @@ enum ApartmentStatus: String, Codable, CaseIterable, Identifiable {
         case .call:    return "phone"
         case .visit:   return "figure.walk"
         case .calc:    return "function"
-        case .deal:    return "handshake"
+        case .deal:    return "checkmark.seal.fill"
         case .deposit: return "banknote"
         case .waiting: return "clock"
         case .auction: return "hammer"

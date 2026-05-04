@@ -40,6 +40,7 @@ final class ContentViewModel {
     enum SortOrder: String, CaseIterable, Identifiable {
         case flipScore   = "FlipScore"
         case price       = "Цена"
+        case area        = "Площадь"
         case viewsPerDay = "Просмотры/день"
         case dateAdded   = "Дата добавления"
 
@@ -49,8 +50,17 @@ final class ContentViewModel {
             switch self {
             case .flipScore:   return "star.fill"
             case .price:       return "tag"
+            case .area:        return "square"
             case .viewsPerDay: return "eye"
             case .dateAdded:   return "calendar"
+            }
+        }
+
+        /// Natural sort direction: true = ascending is natural (e.g. cheap first, small first)
+        var naturalAscending: Bool {
+            switch self {
+            case .price, .area: return true
+            default:            return false
             }
         }
     }
@@ -108,11 +118,21 @@ final class ContentViewModel {
     /// When true, listings with deposit-paid phrases in description are shown. Off by default.
     var showDeposits: Bool = false
 
-    /// Okrugs currently shown. Empty = show all.
+    /// Окружа currently shown. Empty = show all.
     var activeOkrugFilters: Set<String> = []
 
     /// Sorted list of all okrugs present in the current apartment dataset.
     private(set) var availableOkrugs: [String] = []
+
+    /// Room count buckets currently shown. Empty = show all.
+    /// 0 = Студия, 1 = 1К, 2 = 2К, 3 = 3К, 4 = 4К+ (≥4 комнат).
+    var activeRoomFilters: Set<Int> = []
+
+    /// Sorted list of room count buckets present in the dataset (0…4).
+    private(set) var availableRoomCounts: [Int] = []
+
+    /// Sort direction: true = ascending, false = descending.
+    var sortAscending: Bool = false
 
     // MARK: - Init
 
@@ -168,6 +188,12 @@ final class ContentViewModel {
             return o
         })).sorted()
 
+        // Compute available room count buckets (0=Studio, 1-3=rooms, 4=4+)
+        availableRoomCounts = Array(Set(apartments.compactMap { apt -> Int? in
+            guard let r = apt.roomsCount else { return nil }
+            return min(r, 4)
+        })).sorted()
+
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
             guard activeStatusFilters.contains(apt.status) else { return nil }
@@ -180,16 +206,25 @@ final class ContentViewModel {
             if !activeOkrugFilters.isEmpty {
                 guard let okrug = apt.okrug, activeOkrugFilters.contains(okrug) else { return nil }
             }
+            // Skip apartments not matching the active room filter (empty = show all).
+            // Apartments with unknown roomsCount are always shown.
+            if !activeRoomFilters.isEmpty, let rooms = apt.roomsCount {
+                guard activeRoomFilters.contains(min(rooms, 4)) else { return nil }
+            }
             return (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
         }
 
         let sorted = pairs.sorted { lhs, rhs in
+            // ascending = natural for price/area, so invert for descending only on those
+            let descending: Bool
             switch sortOrder {
-            case .flipScore:   return lhs.1.totalScore > rhs.1.totalScore
-            case .price:       return lhs.0.price < rhs.0.price
-            case .viewsPerDay: return (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
-            case .dateAdded:   return lhs.0.dateAdded > rhs.0.dateAdded
+            case .flipScore:   descending = lhs.1.totalScore > rhs.1.totalScore
+            case .price:       descending = lhs.0.price < rhs.0.price
+            case .area:        descending = (lhs.0.area ?? 0) > (rhs.0.area ?? 0)
+            case .viewsPerDay: descending = (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
+            case .dateAdded:   descending = lhs.0.dateAdded > rhs.0.dateAdded
             }
+            return sortAscending ? !descending : descending
         }
         cachedScores = sorted
     }
@@ -210,6 +245,34 @@ final class ContentViewModel {
         } else {
             activeOkrugFilters.insert(okrug)
         }
+    }
+
+    /// Toggle a room count bucket in the active room filter set.
+    func toggleRoomFilter(_ bucket: Int) {
+        if activeRoomFilters.contains(bucket) {
+            activeRoomFilters.remove(bucket)
+        } else {
+            activeRoomFilters.insert(bucket)
+        }
+    }
+
+    // MARK: - URL Lookup
+
+    /// Finds an apartment in the database by its Cian listing URL.
+    /// Returns nil if the ID can't be parsed or the apartment isn't in the DB yet.
+    func lookupApartment(byURL urlString: String) -> Apartment? {
+        guard let id = Self.extractApartmentID(from: urlString) else { return nil }
+        let descriptor = FetchDescriptor<Apartment>(predicate: #Predicate { $0.id == id })
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private static func extractApartmentID(from urlString: String) -> String? {
+        // Matches Cian flat URLs: /flat/123456/, /sale/flat/123456789/, etc.
+        let pattern = "/flat[^/]*/([0-9]{5,12})(?:/|$)"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: urlString, range: NSRange(urlString.startIndex..., in: urlString)),
+              let range = Range(match.range(at: 1), in: urlString) else { return nil }
+        return String(urlString[range])
     }
 
     // MARK: - Waiting Condition Checker

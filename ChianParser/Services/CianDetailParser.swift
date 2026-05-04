@@ -285,17 +285,29 @@ final class CianDetailParser {
             
             // 7. Статистика (расширенная)
             // offerNode уже определён выше как offerData["offer"]
-            let statsNode = offerNode["stats"] as? [String: Any]
+            // stats может лежать как в offerData["offer"]["stats"], так и прямо в offerData["stats"]
+            let statsNode = (offerNode["stats"] as? [String: Any])
+                ?? (offerData["stats"] as? [String: Any])
             
-            // Вариант А: числа напрямую
+            // Вариант А: числа напрямую (расширенный набор ключей)
             if let stats = statsNode {
-                apartment.viewsTotal = extractInt(stats["total"]) ?? extractInt(stats["totalViews"])
-                apartment.viewsToday = extractInt(stats["daily"]) ?? extractInt(stats["dailyViews"]) ?? extractInt(stats["today"])
+                apartment.viewsTotal = extractInt(stats["total"])
+                    ?? extractInt(stats["totalViews"])
+                    ?? extractInt(stats["allViews"])
+                apartment.viewsToday = extractInt(stats["daily"])
+                    ?? extractInt(stats["dailyViews"])
+                    ?? extractInt(stats["today"])
+                    ?? extractInt(stats["todayViews"])
+                    ?? extractInt(stats["viewsToday"])
+                    ?? extractInt(stats["dayViews"])
             }
             
             // Вариант Б: форматированная строка "1709 просмотров, 44 за сегодня"
             if apartment.viewsTotal == nil || apartment.viewsToday == nil {
-                if let formatted = statsNode?["totalViewsFormattedString"] as? String ?? offerNode["totalViewsFormattedString"] as? String {
+                let formattedStr = statsNode?["totalViewsFormattedString"] as? String
+                    ?? offerNode["totalViewsFormattedString"] as? String
+                    ?? offerData["totalViewsFormattedString"] as? String
+                if let formatted = formattedStr {
                     parseViewsFormattedString(formatted, apartment: apartment)
                 }
             }
@@ -307,10 +319,17 @@ final class CianDetailParser {
                         parseViewsFormattedString(formatted, apartment: apartment)
                     }
                     if apartment.viewsTotal == nil {
-                        apartment.viewsTotal = extractInt(stats["total"]) ?? extractInt(stats["totalViews"])
+                        apartment.viewsTotal = extractInt(stats["total"])
+                            ?? extractInt(stats["totalViews"])
+                            ?? extractInt(stats["allViews"])
                     }
                     if apartment.viewsToday == nil {
-                        apartment.viewsToday = extractInt(stats["daily"]) ?? extractInt(stats["dailyViews"]) ?? extractInt(stats["today"])
+                        apartment.viewsToday = extractInt(stats["daily"])
+                            ?? extractInt(stats["dailyViews"])
+                            ?? extractInt(stats["today"])
+                            ?? extractInt(stats["todayViews"])
+                            ?? extractInt(stats["viewsToday"])
+                            ?? extractInt(stats["dayViews"])
                     }
                 }
             }
@@ -320,7 +339,17 @@ final class CianDetailParser {
             if apartment.viewsToday == nil {
                 parseViewsFormattedString(jsonString, apartment: apartment)
             }
-            
+
+            // Вариант Д: sentinel-поля __domViewsTotal / __domViewsToday
+            // JS-скрипт вытащил числа просмотров прямо из DOM и записал в корень JSON.
+            // Это страховочный вариант, когда stats вообще нет в __NEXT_DATA__.
+            if apartment.viewsTotal == nil {
+                apartment.viewsTotal = extractInt(jsonObject["__domViewsTotal"])
+            }
+            if apartment.viewsToday == nil {
+                apartment.viewsToday = extractInt(jsonObject["__domViewsToday"])
+            }
+
             if let total = apartment.viewsTotal, let today = apartment.viewsToday {
                 print("  📊 Просмотры: сегодня \(today), всего \(total)")
             }
@@ -386,18 +415,31 @@ final class CianDetailParser {
     // Парсинг форматированной строки просмотров: "1709 просмотров, 44 за сегодня"
     // или "446 просмотров · 513 за сегодня" (разделитель может быть запятой или средней точкой ·)
     private static func parseViewsFormattedString(_ text: String, apartment: Apartment) {
-        // Cian formats totals with spaces/NBSP: "1 709 просмотров, 44 за сегодня" or "446 просмотров · 513 за сегодня".
-        // Use a normal string (not raw literal) so \d and \s work correctly in NSRegularExpression.
-        // Group 1 uses [\d\s]* to capture the formatted number "1 709"; filter digits before Int().
-        let pattern = "(\\d[\\d\\s]*\\d|\\d)\\s*просмотр[^,·]*[,·]\\s*(\\d+)\\s*за сегодня"
-        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+        // Cian formats totals with spaces/NBSP (\u00A0): "1\u{00A0}709 просмотров, 44 за сегодня".
+        // [\d \u00A0] captures both regular spaces and non-breaking spaces used as thousands separators.
+        // Group 1 = total views (may have spaces/NBSP inside), Group 2 = today views.
+
+        // Паттерн 1: полная строка с общим числом + числом за сегодня
+        let fullPattern = "(\\d[\\d \\u00A0]*\\d|\\d)\\s*просмотр[^,·\\n]*[,·]\\s*(\\d+)\\s*за сегодня"
+        if let regex = try? NSRegularExpression(pattern: fullPattern, options: .caseInsensitive),
            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
-            if let totalRange = Range(match.range(at: 1), in: text) {
+            if apartment.viewsTotal == nil, let totalRange = Range(match.range(at: 1), in: text) {
                 apartment.viewsTotal = Int(String(text[totalRange]).filter(\.isNumber))
             }
-            if let todayRange = Range(match.range(at: 2), in: text) {
+            if apartment.viewsToday == nil, let todayRange = Range(match.range(at: 2), in: text) {
                 apartment.viewsToday = Int(text[todayRange])
             }
+            return
+        }
+
+        // Паттерн 2 (fallback): только «N за сегодня» без общего числа
+        // Например: "44 за сегодня" без предшествующего блока просмотров
+        let todayOnlyPattern = "(\\d+)\\s*за сегодня"
+        if apartment.viewsToday == nil,
+           let regex = try? NSRegularExpression(pattern: todayOnlyPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let todayRange = Range(match.range(at: 1), in: text) {
+            apartment.viewsToday = Int(text[todayRange])
         }
     }
     
