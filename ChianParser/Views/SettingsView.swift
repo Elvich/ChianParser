@@ -615,18 +615,28 @@ private struct DistrictScoreRow: View {
     let score: Int
     let onChange: (Int) -> Void
 
+    @State private var inputText: String = ""
+    @FocusState private var isEditing: Bool
+
     private var isBanned: Bool { score < 0 }
 
     var body: some View {
         HStack(spacing: 8) {
-            // Score badge
-            Text(isBanned ? "Скрыть" : "\(score)")
+            // Editable score badge — click to type a value directly
+            TextField("", text: $inputText)
                 .font(.caption.monospacedDigit().bold())
                 .foregroundStyle(isBanned ? .white : scoreColor)
+                .multilineTextAlignment(.center)
+                .textFieldStyle(.plain)
                 .frame(width: 46)
-                .padding(.vertical, 2)
-                .background(isBanned ? Color.red : scoreColor.opacity(0.12))
+                .padding(.vertical, 3)
+                .background(isBanned ? Color.red : scoreColor.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: 5))
+                .focused($isEditing)
+                .onSubmit { commitInput() }
+                .onChange(of: isEditing) { _, focused in if !focused { commitInput() } }
+                .onAppear { syncText() }
+                .onChange(of: score) { _, _ in if !isEditing { syncText() } }
 
             Text(name)
                 .strikethrough(isBanned, color: .red)
@@ -639,6 +649,21 @@ private struct DistrictScoreRow: View {
                 set: { onChange(max(-1, min(20, $0))) }
             ), in: -1...20)
             .labelsHidden()
+        }
+    }
+
+    private func syncText() {
+        inputText = score < 0 ? "-1" : "\(score)"
+    }
+
+    private func commitInput() {
+        let trimmed = inputText.trimmingCharacters(in: .whitespaces)
+        if let value = Int(trimmed) {
+            let clamped = max(-1, min(20, value))
+            onChange(clamped)
+            inputText = clamped < 0 ? "-1" : "\(clamped)"
+        } else {
+            syncText()  // reset on invalid input
         }
     }
 
