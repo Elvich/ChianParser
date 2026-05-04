@@ -267,7 +267,13 @@ final class ContentViewModel {
             // ascending = natural for price/area, so invert for descending only on those
             let descending: Bool
             switch sortOrder {
-            case .flipScore:   descending = lhs.1.totalScore > rhs.1.totalScore
+            case .flipScore:
+                // Primary: FlipScore; secondary tiebreaker: views/day (higher = better)
+                if lhs.1.totalScore != rhs.1.totalScore {
+                    descending = lhs.1.totalScore > rhs.1.totalScore
+                } else {
+                    descending = (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
+                }
             case .price:       descending = lhs.0.price < rhs.0.price
             case .area:        descending = (lhs.0.area ?? 0) > (rhs.0.area ?? 0)
             case .viewsPerDay: descending = (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
@@ -515,8 +521,15 @@ final class ContentViewModel {
         if existing.metro != new.metro { existing.metro = new.metro; hasChanges = true }
         if existing.metroDistance != new.metroDistance { existing.metroDistance = new.metroDistance; hasChanges = true }
         if existing.metroTransportType != new.metroTransportType { existing.metroTransportType = new.metroTransportType; hasChanges = true }
-        if existing.viewsToday != new.viewsToday { existing.viewsToday = new.viewsToday; hasChanges = true }
-        if existing.viewsTotal != new.viewsTotal { existing.viewsTotal = new.viewsTotal; hasChanges = true }
+        // viewsToday / viewsTotal приходят только из детального парсинга.
+        // Поисковый парсер их не заполняет (new.viewsToday == nil) —
+        // поэтому перезаписываем только если новое значение реально есть.
+        if let newViews = new.viewsToday, existing.viewsToday != newViews {
+            existing.viewsToday = newViews; hasChanges = true
+        }
+        if let newTotal = new.viewsTotal, existing.viewsTotal != newTotal {
+            existing.viewsTotal = newTotal; hasChanges = true
+        }
 
         if hasChanges { existing.lastUpdate = Date() }
 
