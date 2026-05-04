@@ -109,10 +109,11 @@ struct FlipScoreResult {
     let totalScore: Int
 
     // Component scores
-    let priceScore: Int  // max 40 — discount vs benchmark
-    let metroScore: Int  // max 25 — proximity to metro
-    let floorScore: Int  // max 20 — floor position
-    let areaScore: Int   // max 15 — apartment area
+    let priceScore: Int     // max 40 — discount vs benchmark
+    let metroScore: Int     // max 25 — proximity to metro
+    let locationScore: Int  // max 20 — floor position (default) or district rank (district mode)
+    let isDistrictScore: Bool // true when locationScore reflects district ranking
+    let areaScore: Int      // max 15 — apartment area
 
     // Benchmark context
     let priceSqm: Double?        // calculated price per m² for this apartment

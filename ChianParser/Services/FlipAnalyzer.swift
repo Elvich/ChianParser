@@ -7,7 +7,7 @@
 //  Scoring breakdown (total 100 pts):
 //    Price vs benchmark   40 pts  — deeper discount → higher score
 //    Metro proximity      25 pts  — walk < 5 min is best
-//    Floor position       20 pts  — avoid 1st and last floor
+//    Location             20 pts  — floor position (default) OR district rank (district mode)
 //    Area                 15 pts  — larger is better
 //
 
@@ -20,20 +20,24 @@ final class FlipAnalyzer {}
 extension FlipAnalyzer: FlipAnalyzerProtocol {
 
     func buildBenchmark(from apartments: [Apartment]) -> BenchmarkContext {
-        var groups: [String: [Double]] = [:]
+        var okrugGroups: [String: [Double]] = [:]
+        var districtGroups: [String: [Double]] = [:]
         var allPricesSqm: [Double] = []
 
         for apt in apartments {
             guard let area = apt.area, area > 10, apt.price > 0 else { continue }
             let priceSqm = Double(apt.price) / area
             let okrug = extractOkrug(from: apt.address)
-            groups[okrug, default: []].append(priceSqm)
+            okrugGroups[okrug, default: []].append(priceSqm)
             allPricesSqm.append(priceSqm)
+            if let district = apt.district {
+                districtGroups[district, default: []].append(priceSqm)
+            }
         }
 
         let minSamples = 5
         var byOkrug: [String: OkrugBenchmark] = [:]
-        for (okrug, prices) in groups where prices.count >= minSamples {
+        for (okrug, prices) in okrugGroups where prices.count >= minSamples {
             byOkrug[okrug] = OkrugBenchmark(
                 medianPriceSqm: median(of: prices),
                 sampleSize: prices.count,
@@ -41,10 +45,21 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             )
         }
 
+        var byDistrict: [String: OkrugBenchmark] = [:]
+        for (district, prices) in districtGroups where prices.count >= minSamples {
+            byDistrict[district] = OkrugBenchmark(
+                medianPriceSqm: median(of: prices),
+                sampleSize: prices.count,
+                okrug: district  // store district name in 'okrug' field for display
+            )
+        }
+
         let globalMedian = allPricesSqm.count >= minSamples ? median(of: allPricesSqm) : nil
 
+        // districtScores, useDistrictScore, useDistrictBenchmark enriched by ContentViewModel
         return BenchmarkContext(
             byOkrug: byOkrug,
+            byDistrict: byDistrict,
             globalMedian: globalMedian,
             globalSampleSize: allPricesSqm.count
         )
@@ -57,17 +72,31 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         }()
 
         let okrug = extractOkrug(from: apartment.address)
-        let okrugBenchmark = benchmark.byOkrug[okrug]
-        let benchmarkSqm = okrugBenchmark?.medianPriceSqm ?? benchmark.globalMedian
-        let benchmarkOkrug = okrugBenchmark?.okrug
-        let sampleSize = okrugBenchmark?.sampleSize ?? benchmark.globalSampleSize
+
+        // Choose benchmark source: district-level (more precise) or okrug-level (default)
+        let benchmarkSqm: Double?
+        let benchmarkOkrug: String?
+        let sampleSize: Int
+
+        if benchmark.useDistrictBenchmark,
+           let district = apartment.district,
+           let districtBM = benchmark.byDistrict[district] {
+            benchmarkSqm = districtBM.medianPriceSqm
+            benchmarkOkrug = districtBM.okrug
+            sampleSize = districtBM.sampleSize
+        } else {
+            let okrugBM = benchmark.byOkrug[okrug]
+            benchmarkSqm = okrugBM?.medianPriceSqm ?? benchmark.globalMedian
+            benchmarkOkrug = okrugBM?.okrug
+            sampleSize = okrugBM?.sampleSize ?? benchmark.globalSampleSize
+        }
 
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm)
         let metroScore = computeMetroScore(apartment: apartment)
-        let floorScore = computeFloorScore(apartment: apartment)
+        let (locationScore, isDistrictScore) = computeLocationScore(apartment: apartment, benchmark: benchmark)
         let areaScore  = computeAreaScore(apartment: apartment)
 
-        let total = priceScore + metroScore + floorScore + areaScore
+        let total = priceScore + metroScore + locationScore + areaScore
 
         let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds)
 
@@ -75,7 +104,8 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             totalScore: min(total, 100),
             priceScore: priceScore,
             metroScore: metroScore,
-            floorScore: floorScore,
+            locationScore: locationScore,
+            isDistrictScore: isDistrictScore,
             areaScore: areaScore,
             priceSqm: priceSqm,
             benchmarkSqm: benchmarkSqm,
@@ -129,12 +159,27 @@ private extension FlipAnalyzer {
         }
     }
 
-    /// Floor score: max 20 pts.
-    /// First floor → 0, last floor → 5, near-last → 13, all other floors → 20.
+    /// Location score: max 20 pts.
+    /// District mode ON  — reads score directly from benchmark.districtScores (0…20), neutral 7 if unknown.
+    /// District mode OFF — floor position (1st floor → 0, last → 5, near-last → 13, other → 20).
+    func computeLocationScore(apartment: Apartment, benchmark: BenchmarkContext) -> (score: Int, isDistrict: Bool) {
+        guard benchmark.useDistrictScore else {
+            return (computeFloorScore(apartment: apartment), false)
+        }
+        // District mode ON: look up the explicit score for this district
+        if let district = apartment.district,
+           let score = benchmark.districtScores[district],
+           score >= 0 {
+            return (min(score, 20), true)
+        }
+        return (7, true)  // No district data or district not in table — neutral score
+    }
+
+    /// Floor score (used in default mode): max 20 pts.
     func computeFloorScore(apartment: Apartment) -> Int {
         guard let floor = apartment.floor, let total = apartment.totalFloors, total > 0 else { return 7 }
-        if floor == 1       { return 0 }
-        if floor == total   { return 5 }
+        if floor == 1         { return 0 }
+        if floor == total     { return 5 }
         if floor == total - 1 { return 13 }
         return 20
     }
@@ -271,6 +316,21 @@ extension FlipAnalyzer {
             return okrug
         }
         return "Москва"
+    }
+}
+
+// MARK: - District Extraction
+
+extension FlipAnalyzer {
+
+    /// Extract the Moscow district name from an address string.
+    /// Cian addresses contain "р-н <DistrictName>" as a comma-separated fragment.
+    func extractDistrict(from address: String) -> String? {
+        let pattern = "р-н\\s+([^,]+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: address, range: NSRange(address.startIndex..., in: address)),
+              let range = Range(match.range(at: 1), in: address) else { return nil }
+        return String(address[range]).trimmingCharacters(in: .whitespaces)
     }
 }
 

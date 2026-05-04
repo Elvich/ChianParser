@@ -96,14 +96,15 @@ struct FlipAnalyzerScoringTests {
         #expect(result.metroScore == 0)
     }
 
-    // MARK: - Floor Score
+    // MARK: - Location Score (floor mode, default)
 
     @Test("First floor → 0 pts")
     func floorScore_firstFloor() {
         let apt = makeApartment(floor: 1, totalFloors: 16)
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
-        #expect(result.floorScore == 0)
+        #expect(result.locationScore == 0)
+        #expect(result.isDistrictScore == false)
     }
 
     @Test("Last floor → 5 pts")
@@ -111,7 +112,7 @@ struct FlipAnalyzerScoringTests {
         let apt = makeApartment(floor: 16, totalFloors: 16)
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
-        #expect(result.floorScore == 5)
+        #expect(result.locationScore == 5)
     }
 
     @Test("Middle floor → max 20 pts")
@@ -119,7 +120,39 @@ struct FlipAnalyzerScoringTests {
         let apt = makeApartment(floor: 8, totalFloors: 16)
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
-        #expect(result.floorScore == 20)
+        #expect(result.locationScore == 20)
+    }
+
+    @Test("District mode: explicit score 18 → 18 pts")
+    func districtScore_explicit() {
+        let apt = makeApartment()
+        apt.district = "Арбат"
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0,
+                                         districtScores: ["Арбат": 18], useDistrictScore: true)
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.locationScore == 18)
+        #expect(result.isDistrictScore == true)
+    }
+
+    @Test("District mode: score capped at 20")
+    func districtScore_cappedAt20() {
+        let apt = makeApartment()
+        apt.district = "Арбат"
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0,
+                                         districtScores: ["Арбат": 25], useDistrictScore: true)
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.locationScore == 20)
+    }
+
+    @Test("District mode: no district data → neutral 7 pts")
+    func districtScore_noData() {
+        let apt = makeApartment()
+        apt.district = nil
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0,
+                                         districtScores: ["Арбат": 20], useDistrictScore: true)
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.locationScore == 7)
+        #expect(result.isDistrictScore == true)
     }
 
     // MARK: - Area Score
@@ -190,7 +223,7 @@ struct FlipAnalyzerBenchmarkTests {
     func priceDiscount_belowMarket() throws {
         let result = FlipScoreResult(
             totalScore: 80,
-            priceScore: 40, metroScore: 20, floorScore: 20, areaScore: 0,
+            priceScore: 40, metroScore: 20, locationScore: 20, isDistrictScore: false, areaScore: 0,
             priceSqm: 150_000, benchmarkSqm: 200_000,
             benchmarkOkrug: "ЦАО", benchmarkSampleSize: 10,
             demandLevel: .market, viewsPerDay: 120

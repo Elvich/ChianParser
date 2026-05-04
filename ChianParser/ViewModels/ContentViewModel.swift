@@ -99,6 +99,9 @@ final class ContentViewModel {
     /// When enabled, re-checks stale apartments for removal/price changes when the detail queue drains.
     var autoCheckActivity: Bool = false
 
+    /// When enabled, apartments without detail parsing are excluded from the scored list.
+    var requireDetailParsed: Bool = false
+
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
 
@@ -133,6 +136,24 @@ final class ContentViewModel {
 
     /// Sort direction: true = ascending, false = descending.
     var sortAscending: Bool = false
+
+    // MARK: - District Mode
+
+    /// When true, locationScore uses the district score instead of floor position.
+    var useDistrictScore: Bool = false
+
+    /// Per-district/okrug scores. Score -1 = always hide. 0…20 = locationScore.
+    /// Synced from AppStorage via ContentView.
+    var districtScores: [String: Int] = DistrictRanking.defaultScores
+
+    /// When true, price benchmark uses district-level median instead of okrug-level.
+    var useDistrictBenchmark: Bool = false
+
+    /// Districts currently shown. Empty = show all (only active when useDistrictScore is true).
+    var activeDistrictFilters: Set<String> = []
+
+    /// Districts available for the filter bar, sorted by score descending.
+    private(set) var availableDistricts: [String] = []
 
     // MARK: - Init
 
@@ -176,15 +197,25 @@ final class ContentViewModel {
 
     /// Rebuild the score cache synchronously. Prefer scheduleRefresh for UI-triggered calls.
     func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds, metroBanlist: Set<String>) {
-        // Build benchmark from ALL apartments (not just visible ones) for accurate pricing
-        let benchmark = flipAnalyzer.buildBenchmark(from: apartments)
+        // Build benchmark from ALL apartments (not just visible ones) for accurate pricing,
+        // then enrich with district scoring settings from ContentViewModel.
+        let base = flipAnalyzer.buildBenchmark(from: apartments)
+        let benchmark = BenchmarkContext(
+            byOkrug: base.byOkrug,
+            byDistrict: base.byDistrict,
+            globalMedian: base.globalMedian,
+            globalSampleSize: base.globalSampleSize,
+            districtScores: districtScores,
+            useDistrictScore: useDistrictScore,
+            useDistrictBenchmark: useDistrictBenchmark
+        )
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
         checkWaitingConditions(apartments: apartments, benchmark: benchmark, thresholds: thresholds)
 
         // Compute available okrugs — exclude "Москва" (it's a fallback, not a real filter target)
-        availableOkrugs = Array(Set(apartments.compactMap { okrug -> String? in
-            guard let o = okrug.okrug, o != "Москва" else { return nil }
+        availableOkrugs = Array(Set(apartments.compactMap { apt -> String? in
+            guard let o = apt.okrug, o != "Москва" else { return nil }
             return o
         })).sorted()
 
@@ -194,14 +225,28 @@ final class ContentViewModel {
             return min(r, 4)
         })).sorted()
 
+        // Compute available districts (sorted by score descending, exclude banned)
+        availableDistricts = Array(Set(apartments.compactMap { apt -> String? in
+            if let d = apt.district, (districtScores[d] ?? 0) < 0 { return nil }
+            if let o = apt.okrug, (districtScores[o] ?? 0) < 0 { return nil }
+            return apt.district
+        })).sorted { a, b in
+            (districtScores[a] ?? 7) > (districtScores[b] ?? 7)
+        }
+
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
             guard activeStatusFilters.contains(apt.status) else { return nil }
+            // Skip apartments without detail parsing when that filter is active
+            if requireDetailParsed && !apt.isDetailedParsed { return nil }
             // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
             if apt.isAuction && !showAuctions { return nil }
             if apt.isDepositPaid && !showDeposits { return nil }
             // Skip apartments whose nearest metro is in the banlist
             if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
+            // District ban — score -1 means always hide (district or okrug level)
+            if let district = apt.district, (districtScores[district] ?? 0) < 0 { return nil }
+            if let okrug = apt.okrug, (districtScores[okrug] ?? 0) < 0 { return nil }
             // Skip apartments not in the active okrug filter (empty set = show all)
             if !activeOkrugFilters.isEmpty {
                 guard let okrug = apt.okrug, activeOkrugFilters.contains(okrug) else { return nil }
@@ -210,6 +255,10 @@ final class ContentViewModel {
             // Apartments with unknown roomsCount are always shown.
             if !activeRoomFilters.isEmpty, let rooms = apt.roomsCount {
                 guard activeRoomFilters.contains(min(rooms, 4)) else { return nil }
+            }
+            // District filter — only active when district mode is on
+            if useDistrictScore && !activeDistrictFilters.isEmpty {
+                guard let district = apt.district, activeDistrictFilters.contains(district) else { return nil }
             }
             return (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
         }
@@ -244,6 +293,15 @@ final class ContentViewModel {
             activeOkrugFilters.remove(okrug)
         } else {
             activeOkrugFilters.insert(okrug)
+        }
+    }
+
+    /// Toggle a district in the active district filter set.
+    func toggleDistrictFilter(_ district: String) {
+        if activeDistrictFilters.contains(district) {
+            activeDistrictFilters.remove(district)
+        } else {
+            activeDistrictFilters.insert(district)
         }
     }
 
@@ -393,13 +451,17 @@ final class ContentViewModel {
                     if updateExistingApartment(existing, with: apartment) {
                         updatedCount += 1
                     }
-                    // Populate okrug for apartments that were parsed before this field existed
+                    // Populate okrug/district for apartments parsed before these fields existed
                     if existing.okrug == nil {
                         existing.okrug = flipAnalyzer.extractOkrug(from: existing.address)
+                    }
+                    if existing.district == nil {
+                        existing.district = flipAnalyzer.extractDistrict(from: existing.address)
                     }
                 } else if apartment.price > 0 {
                     // Don't insert apartments with price = 0 — parser failure, not a real listing
                     apartment.okrug = flipAnalyzer.extractOkrug(from: apartment.address)
+                    apartment.district = flipAnalyzer.extractDistrict(from: apartment.address)
                     modelContext.insert(apartment)
                     newlyInserted.append(apartment)
                     newCount += 1

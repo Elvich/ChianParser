@@ -47,13 +47,19 @@ struct ContentBody: View {
     @AppStorage(SearchURLList.appStorageKey) private var searchURLListJSON: String = SearchURLList.defaultJSON
     @State private var searchURLs: [String] = []
 
+    // District settings — synced to viewModel on change
+    @AppStorage("districtModeEnabled")          private var districtModeEnabled: Bool = false
+    @AppStorage("districtBenchmarkEnabled")     private var districtBenchmarkEnabled: Bool = false
+    @AppStorage(DistrictRanking.scoresKey)      private var districtScoresJSON: String = DistrictRanking.defaultScoresJSON
+
     // Parser settings from AppStorage (shared with SettingsView → Парсинг tab)
-    @AppStorage("parserAutoDetail")       private var autoDetail: Bool = true
-    @AppStorage("parserAutoCheck")        private var autoCheck: Bool = true
-    @AppStorage("parserStaleDays")        private var staleDays: Int = 3
-    @AppStorage("parserEnablePagination") private var enablePagination: Bool = true
-    @AppStorage("parserMaxPages")         private var maxPages: Int = 1
-    @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
+    @AppStorage("parserAutoDetail")        private var autoDetail: Bool = true
+    @AppStorage("parserAutoCheck")         private var autoCheck: Bool = true
+    @AppStorage("parserStaleDays")         private var staleDays: Int = 3
+    @AppStorage("parserEnablePagination")  private var enablePagination: Bool = true
+    @AppStorage("parserMaxPages")          private var maxPages: Int = 1
+    @AppStorage("parserMode")              private var parserMode: ParsingMode = .parallel
+    @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
 
     @Environment(\.openSettings) private var openSettings
 
@@ -148,25 +154,47 @@ struct ContentBody: View {
             // Decode once on appear — not on every render pass
             metroBanlist = MetroBanlist.decode(from: metroBanlistJSON)
             searchURLs   = SearchURLList.decode(from: searchURLListJSON)
+            // Sync district settings to VM
+            viewModel.useDistrictScore      = districtModeEnabled
+            viewModel.useDistrictBenchmark  = districtBenchmarkEnabled
+            viewModel.districtScores        = DistrictRanking.decodeScores(from: districtScoresJSON)
             // Sync parser settings to VM
-            viewModel.autoDetailParsing = autoDetail
-            viewModel.autoCheckActivity = autoCheck
-            viewModel.staleDaysThreshold = staleDays
-            viewModel.enablePagination = enablePagination
-            viewModel.maxPages = maxPages
-            viewModel.parsingMode = parserMode
+            viewModel.autoDetailParsing   = autoDetail
+            viewModel.autoCheckActivity   = autoCheck
+            viewModel.staleDaysThreshold  = staleDays
+            viewModel.enablePagination    = enablePagination
+            viewModel.maxPages            = maxPages
+            viewModel.parsingMode         = parserMode
+            viewModel.requireDetailParsed = requireDetailParsed
         }
         .onChange(of: metroBanlistJSON)   { _, new in
             metroBanlist = MetroBanlist.decode(from: new)
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
+        .onChange(of: districtModeEnabled) { _, v in
+            viewModel.useDistrictScore = v
+            viewModel.activeDistrictFilters = []
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: districtBenchmarkEnabled) { _, v in
+            viewModel.useDistrictBenchmark = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: districtScoresJSON) { _, new in
+            viewModel.districtScores = DistrictRanking.decodeScores(from: new)
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
         .onChange(of: searchURLListJSON)  { _, new in searchURLs = SearchURLList.decode(from: new) }
-        .onChange(of: autoDetail)         { _, v in viewModel.autoDetailParsing = v }
-        .onChange(of: autoCheck)          { _, v in viewModel.autoCheckActivity = v }
-        .onChange(of: staleDays)          { _, v in viewModel.staleDaysThreshold = v }
-        .onChange(of: enablePagination)   { _, v in viewModel.enablePagination = v }
-        .onChange(of: maxPages)           { _, v in viewModel.maxPages = v }
-        .onChange(of: parserMode)         { _, v in viewModel.parsingMode = v }
+        .onChange(of: autoDetail)           { _, v in viewModel.autoDetailParsing = v }
+        .onChange(of: autoCheck)            { _, v in viewModel.autoCheckActivity = v }
+        .onChange(of: staleDays)            { _, v in viewModel.staleDaysThreshold = v }
+        .onChange(of: enablePagination)     { _, v in viewModel.enablePagination = v }
+        .onChange(of: maxPages)             { _, v in viewModel.maxPages = v }
+        .onChange(of: parserMode)           { _, v in viewModel.parsingMode = v }
+        .onChange(of: requireDetailParsed)  { _, v in
+            viewModel.requireDetailParsed = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
     }
 
     // MARK: - Sidebar: Apartment List
@@ -194,7 +222,8 @@ struct ContentBody: View {
         .onChange(of: viewModel.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.showAuctions)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.activeRoomFilters)   { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.activeRoomFilters)     { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.activeDistrictFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
 
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -227,6 +256,10 @@ struct ContentBody: View {
                 if !viewModel.availableOkrugs.isEmpty {
                     Divider()
                     OkrugFilterBar(viewModel: viewModel)
+                }
+                if viewModel.useDistrictScore && !viewModel.availableDistricts.isEmpty {
+                    Divider()
+                    DistrictFilterBar(viewModel: viewModel)
                 }
             }
         }
@@ -639,6 +672,41 @@ private struct RoomFilterBar: View {
                             .clipShape(Capsule())
                             .overlay(Capsule().stroke(
                                 isActive ? Color.indigo.opacity(0.5) : Color.secondary.opacity(0.3),
+                                lineWidth: 1
+                            ))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .background(.regularMaterial)
+    }
+}
+
+// MARK: - District Filter Bar
+
+private struct DistrictFilterBar: View {
+    @Bindable var viewModel: ContentViewModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(viewModel.availableDistricts, id: \.self) { district in
+                    let isActive = viewModel.activeDistrictFilters.contains(district)
+                    Button {
+                        viewModel.toggleDistrictFilter(district)
+                    } label: {
+                        Text(district)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(isActive ? Color.green.opacity(0.18) : Color.clear)
+                            .foregroundStyle(isActive ? Color.green : .secondary)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(
+                                isActive ? Color.green.opacity(0.5) : Color.secondary.opacity(0.3),
                                 lineWidth: 1
                             ))
                     }

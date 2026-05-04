@@ -35,6 +35,12 @@ struct SettingsView: View {
                     Label("Парсинг", systemImage: "gearshape.2")
                 }
                 .tag(3)
+
+            DistrictsSettingsTab()
+                .tabItem {
+                    Label("Районы", systemImage: "map")
+                }
+                .tag(4)
         }
         .frame(width: 520)
     }
@@ -356,6 +362,7 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserEnablePagination") private var enablePagination: Bool = true
     @AppStorage("parserMaxPages")         private var maxPages: Int = 1
     @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
+    @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = false
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -381,6 +388,7 @@ private struct ParserSettingsTab: View {
             Section {
                 Toggle("Авто-детали", isOn: $autoDetail)
                 Toggle("Авто-проверка активности", isOn: $autoCheck)
+                Toggle("Только с детальным парсингом", isOn: $requireDetailParsed)
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")
@@ -394,7 +402,7 @@ private struct ParserSettingsTab: View {
             } header: {
                 Text("Детальный парсинг")
             } footer: {
-                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.")
+                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных из основного списка.")
             }
 
             Section {
@@ -446,6 +454,7 @@ private struct ParserSettingsTab: View {
                     enablePagination = true
                     maxPages = 1
                     parserMode = .parallel
+                    requireDetailParsed = false
                 }
                 .foregroundStyle(.red)
             }
@@ -468,6 +477,177 @@ private struct ParserSettingsTab: View {
             try? modelContext.save()
             backfillResult = "Обновлено: \(count)"
             isBackfilling = false
+        }
+    }
+}
+
+// MARK: - Tab 5: Districts
+
+private struct DistrictsSettingsTab: View {
+    @AppStorage("districtModeEnabled")      private var districtMode: Bool = false
+    @AppStorage("districtBenchmarkEnabled") private var districtBenchmark: Bool = false
+    @AppStorage(DistrictRanking.scoresKey)  private var scoresJSON: String = DistrictRanking.defaultScoresJSON
+
+    @Environment(AppContainer.self) private var container
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var scores: [String: Int] = [:]
+    @State private var searchText: String = ""
+    @State private var isBackfilling: Bool = false
+    @State private var backfillResult: String = ""
+
+    private var displayEntries: [(name: String, score: Int)] {
+        let all = DistrictRanking.sortedEntries(from: scores)
+        guard !searchText.isEmpty else { return all }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Mode toggles + reset bar
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Баллы по районам", isOn: $districtMode)
+                        .help("Локация во FlipScore считается по баллу района, а не по этажу")
+                    Toggle("Эталон по районам", isOn: $districtBenchmark)
+                        .help("Медианная цена считается по конкретному району, а не по АО. Требует достаточно квартир (≥5) в каждом районе.")
+                }
+                .toggleStyle(.switch)
+                .font(.subheadline)
+                Spacer()
+                Button("Сброс") {
+                    scoresJSON = DistrictRanking.defaultScoresJSON
+                    districtMode = false
+                    districtBenchmark = false
+                }
+                .foregroundStyle(.red)
+                .font(.caption)
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.bar)
+
+            Divider()
+
+            // Search bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Поиск района или округа...", text: $searchText)
+                    .textFieldStyle(.plain)
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.bar)
+
+            Divider()
+
+            // Score list
+            List {
+                Section {
+                    ForEach(displayEntries, id: \.name) { entry in
+                        DistrictScoreRow(
+                            name: entry.name,
+                            score: entry.score,
+                            onChange: { newScore in
+                                scores[entry.name] = newScore
+                                scoresJSON = DistrictRanking.encodeScores(scores)
+                            }
+                        )
+                    }
+                } header: {
+                    Text("Баллы за локацию")
+                } footer: {
+                    Text("Балл −1 = квартира всегда скрыта. 0–20 = очки «Локации» во FlipScore. Режим районов должен быть включён.")
+                }
+
+                Section {
+                    HStack {
+                        Button("Пересчитать районы") { backfillDistricts() }
+                            .disabled(isBackfilling)
+                        if isBackfilling {
+                            ProgressView().scaleEffect(0.7).padding(.leading, 4)
+                        } else if !backfillResult.isEmpty {
+                            Text(backfillResult).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("База данных")
+                } footer: {
+                    Text("Заполняет поле «район» для квартир, добавленных до появления этой функции.")
+                }
+            }
+            .listStyle(.inset)
+        }
+        .onAppear { scores = DistrictRanking.decodeScores(from: scoresJSON) }
+        .onChange(of: scoresJSON) { _, new in scores = DistrictRanking.decodeScores(from: new) }
+        .frame(minHeight: 480)
+    }
+
+    private func backfillDistricts() {
+        isBackfilling = true
+        backfillResult = ""
+        Task { @MainActor in
+            let descriptor = FetchDescriptor<Apartment>()
+            let apartments = (try? modelContext.fetch(descriptor)) ?? []
+            var count = 0
+            for apt in apartments where apt.district == nil {
+                apt.district = container.flipAnalyzer.extractDistrict(from: apt.address)
+                count += 1
+            }
+            try? modelContext.save()
+            backfillResult = "Обновлено: \(count)"
+            isBackfilling = false
+        }
+    }
+}
+
+// MARK: - District Score Row
+
+private struct DistrictScoreRow: View {
+    let name: String
+    let score: Int
+    let onChange: (Int) -> Void
+
+    private var isBanned: Bool { score < 0 }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Score badge
+            Text(isBanned ? "Скрыть" : "\(score)")
+                .font(.caption.monospacedDigit().bold())
+                .foregroundStyle(isBanned ? .white : scoreColor)
+                .frame(width: 46)
+                .padding(.vertical, 2)
+                .background(isBanned ? Color.red : scoreColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            Text(name)
+                .strikethrough(isBanned, color: .red)
+                .foregroundStyle(isBanned ? Color.red.opacity(0.7) : .primary)
+
+            Spacer()
+
+            Stepper("", value: Binding(
+                get: { score },
+                set: { onChange(max(-1, min(20, $0))) }
+            ), in: -1...20)
+            .labelsHidden()
+        }
+    }
+
+    private var scoreColor: Color {
+        switch score {
+        case 17...: return .green
+        case 13...: return .blue
+        case  9...: return .orange
+        default:    return .red
         }
     }
 }

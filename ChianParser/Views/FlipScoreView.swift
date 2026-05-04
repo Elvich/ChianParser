@@ -110,7 +110,12 @@ struct FlipScoreCard: View {
         VStack(spacing: 8) {
             ScoreRow(label: "Цена vs рынок", icon: "tag",           score: result.priceScore, max: 40)
             ScoreRow(label: "Метро",          icon: "tram",          score: result.metroScore, max: 25)
-            ScoreRow(label: "Этаж",           icon: "building.2",    score: result.floorScore, max: 20)
+            ScoreRow(
+                label: result.isDistrictScore ? "Район" : "Этаж",
+                icon:  result.isDistrictScore ? "map" : "building.2",
+                score: result.locationScore,
+                max: 20
+            )
             ScoreRow(label: "Площадь",        icon: "square.dashed", score: result.areaScore,  max: 15)
         }
     }
@@ -221,7 +226,8 @@ struct DemandBadge: View {
         totalScore: 77,
         priceScore: 32,
         metroScore: 20,
-        floorScore: 20,
+        locationScore: 20,
+        isDistrictScore: false,
         areaScore: 5,
         priceSqm: 220_000,
         benchmarkSqm: 280_000,
