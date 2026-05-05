@@ -62,6 +62,8 @@ struct ContentBody: View {
     @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
     @AppStorage("hideStudios")             private var hideStudios: Bool = false
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
+    @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
+    @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
 
     @Environment(\.openSettings) private var openSettings
 
@@ -75,103 +77,30 @@ struct ContentBody: View {
     }
 
     var body: some View {
+        coreView
+            .toolbar { toolbarContent }
+            .confirmationDialog(
+                "Удалить все данные?",
+                isPresented: $viewModel.showClearDataConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Удалить все квартиры (\(apartments.count))", role: .destructive) {
+                    viewModel.clearAllData(apartments: apartments)
+                }
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Это действие нельзя отменить. Будут удалены все сохранённые квартиры и история цен.")
+            }
+            .task { syncViewModelSettings() }
+    }
+
+    private var coreView: some View {
         NavigationSplitView {
             apartmentList
         } detail: {
             scrapingControlPanel
         }
-        .toolbar {
-            ToolbarItemGroup {
-                sortMenu
-
-                Button {
-                    viewModel.startDetailParsing(apartments: apartments)
-                } label: {
-                    Label("Детальный парсинг", systemImage: "arrow.down.circle")
-                }
-                .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading || viewModel.isScraping)
-
-                Button {
-                    viewModel.checkStaleApartments(from: apartments)
-                } label: {
-                    Label("Проверить активность", systemImage: "arrow.clockwise.circle")
-                }
-                .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading)
-                .help("Проверить квартиры, не появлявшиеся в поиске более \(viewModel.staleDaysThreshold) дн.")
-
-                Menu {
-                    Button {
-                        viewModel.exportData(format: .csv, apartments: apartments)
-                    } label: {
-                        Label("Экспорт в CSV", systemImage: "doc.text")
-                    }
-                    Button {
-                        viewModel.exportData(format: .json, apartments: apartments)
-                    } label: {
-                        Label("Экспорт в JSON", systemImage: "doc.badge.gearshape")
-                    }
-                } label: {
-                    Label("Экспорт", systemImage: "square.and.arrow.up")
-                }
-                .disabled(apartments.isEmpty)
-
-                Button(role: .destructive) {
-                    viewModel.showClearDataConfirmation = true
-                } label: {
-                    Label("Очистить данные", systemImage: "trash")
-                }
-                .disabled(apartments.isEmpty)
-
-                Button {
-                    showURLSearch.toggle()
-                    if !showURLSearch {
-                        urlSearchText = ""
-                        urlSearchNotFound = false
-                    }
-                } label: {
-                    Label("Поиск по ссылке", systemImage: showURLSearch ? "magnifyingglass.circle.fill" : "magnifyingglass.circle")
-                }
-                .help("Найти квартиру по ссылке Циан")
-
-                Button {
-                    openSettings()
-                } label: {
-                    Label("Настройки", systemImage: "gearshape")
-                }
-            }
-        }
-        .confirmationDialog(
-            "Удалить все данные?",
-            isPresented: $viewModel.showClearDataConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Удалить все квартиры (\(apartments.count))", role: .destructive) {
-                viewModel.clearAllData(apartments: apartments)
-            }
-            Button("Отмена", role: .cancel) {}
-        } message: {
-            Text("Это действие нельзя отменить. Будут удалены все сохранённые квартиры и история цен.")
-        }
-        .task {
-            // Decode once on appear — not on every render pass
-            metroBanlist = MetroBanlist.decode(from: metroBanlistJSON)
-            searchURLs   = SearchURLList.decode(from: searchURLListJSON)
-            // Sync district settings to VM
-            viewModel.useDistrictScore      = districtModeEnabled
-            viewModel.useDistrictBenchmark  = districtBenchmarkEnabled
-            viewModel.districtScores        = DistrictRanking.decodeScores(from: districtScoresJSON)
-            // Sync parser settings to VM
-            viewModel.autoDetailParsing   = autoDetail
-            viewModel.autoCheckActivity   = autoCheck
-            viewModel.staleDaysThreshold  = staleDays
-            viewModel.enablePagination    = enablePagination
-            viewModel.maxPages            = maxPages
-            viewModel.parsingMode         = parserMode
-            viewModel.requireDetailParsed = requireDetailParsed
-            viewModel.hideStudios         = hideStudios
-            viewModel.hideApartments      = hideApartments
-        }
-        .onChange(of: metroBanlistJSON)   { _, new in
+        .onChange(of: metroBanlistJSON) { _, new in
             metroBanlist = MetroBanlist.decode(from: new)
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
@@ -188,18 +117,18 @@ struct ContentBody: View {
             viewModel.districtScores = DistrictRanking.decodeScores(from: new)
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
-        .onChange(of: searchURLListJSON)  { _, new in searchURLs = SearchURLList.decode(from: new) }
-        .onChange(of: autoDetail)           { _, v in viewModel.autoDetailParsing = v }
-        .onChange(of: autoCheck)            { _, v in viewModel.autoCheckActivity = v }
-        .onChange(of: staleDays)            { _, v in viewModel.staleDaysThreshold = v }
-        .onChange(of: enablePagination)     { _, v in viewModel.enablePagination = v }
-        .onChange(of: maxPages)             { _, v in viewModel.maxPages = v }
-        .onChange(of: parserMode)           { _, v in viewModel.parsingMode = v }
-        .onChange(of: requireDetailParsed)  { _, v in
+        .onChange(of: searchURLListJSON) { _, new in searchURLs = SearchURLList.decode(from: new) }
+        .onChange(of: autoDetail)        { _, v in viewModel.autoDetailParsing = v }
+        .onChange(of: autoCheck)         { _, v in viewModel.autoCheckActivity = v }
+        .onChange(of: staleDays)         { _, v in viewModel.staleDaysThreshold = v }
+        .onChange(of: enablePagination)  { _, v in viewModel.enablePagination = v }
+        .onChange(of: maxPages)          { _, v in viewModel.maxPages = v }
+        .onChange(of: parserMode)        { _, v in viewModel.parsingMode = v }
+        .onChange(of: requireDetailParsed) { _, v in
             viewModel.requireDetailParsed = v
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
-        .onChange(of: hideStudios)    { _, v in
+        .onChange(of: hideStudios) { _, v in
             viewModel.hideStudios = v
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
@@ -207,6 +136,102 @@ struct ContentBody: View {
             viewModel.hideApartments = v
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
+        .onChange(of: maxMetroDistance) { _, v in
+            viewModel.maxMetroDistance = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: metroWalkOnly) { _, v in
+            viewModel.metroWalkOnly = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup {
+            sortMenu
+        }
+        ToolbarItemGroup {
+            Button {
+                viewModel.startDetailParsing(apartments: apartments)
+            } label: {
+                Label("Детальный парсинг", systemImage: "arrow.down.circle")
+            }
+            .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading || viewModel.isScraping)
+
+            Button {
+                viewModel.checkStaleApartments(from: apartments)
+            } label: {
+                Label("Проверить активность", systemImage: "arrow.clockwise.circle")
+            }
+            .disabled(apartments.isEmpty || viewModel.detailLoader.isLoading)
+            .help("Проверить квартиры, не появлявшиеся в поиске более \(viewModel.staleDaysThreshold) дн.")
+        }
+        ToolbarItemGroup {
+            Menu {
+                Button {
+                    viewModel.exportData(format: .csv, apartments: apartments)
+                } label: {
+                    Label("Экспорт в CSV", systemImage: "doc.text")
+                }
+                Button {
+                    viewModel.exportData(format: .json, apartments: apartments)
+                } label: {
+                    Label("Экспорт в JSON", systemImage: "doc.badge.gearshape")
+                }
+            } label: {
+                Label("Экспорт", systemImage: "square.and.arrow.up")
+            }
+            .disabled(apartments.isEmpty)
+
+            Button(role: .destructive) {
+                viewModel.showClearDataConfirmation = true
+            } label: {
+                Label("Очистить данные", systemImage: "trash")
+            }
+            .disabled(apartments.isEmpty)
+        }
+        ToolbarItemGroup {
+            Button {
+                showURLSearch.toggle()
+                if !showURLSearch {
+                    urlSearchText = ""
+                    urlSearchNotFound = false
+                }
+            } label: {
+                Label("Поиск по ссылке", systemImage: showURLSearch ? "magnifyingglass.circle.fill" : "magnifyingglass.circle")
+            }
+            .help("Найти квартиру по ссылке Циан")
+
+            Button {
+                openSettings()
+            } label: {
+                Label("Настройки", systemImage: "gearshape")
+            }
+        }
+    }
+
+    // MARK: - Settings sync
+
+    private func syncViewModelSettings() {
+        metroBanlist = MetroBanlist.decode(from: metroBanlistJSON)
+        searchURLs   = SearchURLList.decode(from: searchURLListJSON)
+        viewModel.useDistrictScore     = districtModeEnabled
+        viewModel.useDistrictBenchmark = districtBenchmarkEnabled
+        viewModel.districtScores       = DistrictRanking.decodeScores(from: districtScoresJSON)
+        viewModel.autoDetailParsing    = autoDetail
+        viewModel.autoCheckActivity    = autoCheck
+        viewModel.staleDaysThreshold   = staleDays
+        viewModel.enablePagination     = enablePagination
+        viewModel.maxPages             = maxPages
+        viewModel.parsingMode          = parserMode
+        viewModel.requireDetailParsed  = requireDetailParsed
+        viewModel.hideStudios          = hideStudios
+        viewModel.hideApartments       = hideApartments
+        viewModel.maxMetroDistance     = maxMetroDistance
+        viewModel.metroWalkOnly        = metroWalkOnly
     }
 
     // MARK: - Sidebar: Apartment List

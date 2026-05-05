@@ -108,6 +108,12 @@ final class ContentViewModel {
     /// When enabled, апартаменты (isApartments == true) are excluded from the scored list.
     var hideApartments: Bool = false
 
+    /// Maximum metro distance in minutes (0 = no limit). Apartments exceeding this are hidden.
+    var maxMetroDistance: Int = 0
+
+    /// When enabled, only walk-accessible metro is accepted (metroTransportType == "walk").
+    var metroWalkOnly: Bool = false
+
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
 
@@ -253,6 +259,10 @@ final class ContentViewModel {
             if apt.isDepositPaid && !showDeposits { return nil }
             // Skip apartments whose nearest metro is in the banlist
             if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
+            // Skip apartments that exceed the max metro distance (0 = no limit)
+            if maxMetroDistance > 0, let dist = apt.metroDistance, dist > maxMetroDistance { return nil }
+            // Skip apartments reachable only by transport when walk-only mode is on
+            if metroWalkOnly, apt.metroTransportType == "transport" { return nil }
             // District ban — score -1 means always hide (district or okrug level)
             if let district = apt.district, (districtScores[district] ?? 0) < 0 { return nil }
             if let okrug = apt.okrug, (districtScores[okrug] ?? 0) < 0 { return nil }
@@ -291,7 +301,14 @@ final class ContentViewModel {
                 }
             case .price:       descending = lhs.0.price < rhs.0.price
             case .area:        descending = (lhs.0.area ?? 0) > (rhs.0.area ?? 0)
-            case .viewsPerDay: descending = (lhs.1.viewsPerDay ?? -1) > (rhs.1.viewsPerDay ?? -1)
+            case .viewsPerDay:
+                let lv = lhs.1.viewsPerDay ?? -1
+                let rv = rhs.1.viewsPerDay ?? -1
+                if lv != rv {
+                    descending = lv > rv
+                } else {
+                    descending = lhs.1.totalScore > rhs.1.totalScore
+                }
             case .dateAdded:   descending = lhs.0.dateAdded > rhs.0.dateAdded
             }
             return sortAscending ? !descending : descending

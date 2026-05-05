@@ -115,6 +115,8 @@ private struct DemandSettingsTab: View {
 
 private struct MetroBanlistTab: View {
     @AppStorage(MetroBanlist.appStorageKey) private var metroBanlistJSON: String = MetroBanlist.defaultJSON
+    @AppStorage("metroMaxDistance") private var maxMetroDistance: Int = 0
+    @AppStorage("metroWalkOnly")    private var metroWalkOnly: Bool = false
 
     @State private var newStation: String = ""
     @State private var searchText: String = ""
@@ -127,6 +129,37 @@ private struct MetroBanlistTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Metro distance + walk-only filters
+            VStack(spacing: 0) {
+                HStack {
+                    Toggle("Только пешком", isOn: $metroWalkOnly)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+
+                Divider()
+
+                HStack {
+                    Text("Макс. расстояние")
+                    Spacer()
+                    if maxMetroDistance == 0 {
+                        Text("Без ограничения")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("\(maxMetroDistance) мин.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Stepper("", value: $maxMetroDistance, in: 0...60)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .background(.bar)
+
+            Divider()
+
             // Search + add bar
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
