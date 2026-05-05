@@ -102,6 +102,12 @@ final class ContentViewModel {
     /// When enabled, apartments without detail parsing are excluded from the scored list.
     var requireDetailParsed: Bool = false
 
+    /// When enabled, studios (isStudio == true) are excluded from the scored list.
+    var hideStudios: Bool = false
+
+    /// When enabled, апартаменты (isApartments == true) are excluded from the scored list.
+    var hideApartments: Bool = false
+
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
 
@@ -239,6 +245,9 @@ final class ContentViewModel {
             guard activeStatusFilters.contains(apt.status) else { return nil }
             // Skip apartments without detail parsing when that filter is active
             if requireDetailParsed && !apt.isDetailedParsed { return nil }
+            // Skip studios and апартаменты when their respective hide flags are active
+            if hideStudios && apt.isStudio { return nil }
+            if hideApartments && apt.isApartments { return nil }
             // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
             if apt.isAuction && !showAuctions { return nil }
             if apt.isDepositPaid && !showDeposits { return nil }
@@ -252,9 +261,15 @@ final class ContentViewModel {
                 guard let okrug = apt.okrug, activeOkrugFilters.contains(okrug) else { return nil }
             }
             // Skip apartments not matching the active room filter (empty = show all).
-            // Apartments with unknown roomsCount are always shown.
-            if !activeRoomFilters.isEmpty, let rooms = apt.roomsCount {
-                guard activeRoomFilters.contains(min(rooms, 4)) else { return nil }
+            if !activeRoomFilters.isEmpty {
+                // If studio bucket (0) not selected, also exclude by isStudio flag —
+                // catches studios whose roomsCount is nil or incorrectly set.
+                if !activeRoomFilters.contains(0) && apt.isStudio { return nil }
+                // For known roomsCount: apply bucket matching.
+                // Apartments with nil roomsCount pass through (type unknown).
+                if let rooms = apt.roomsCount {
+                    guard activeRoomFilters.contains(min(rooms, 4)) else { return nil }
+                }
             }
             // District filter — only active when district mode is on
             if useDistrictScore && !activeDistrictFilters.isEmpty {

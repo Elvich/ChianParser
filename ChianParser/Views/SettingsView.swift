@@ -363,6 +363,8 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserMaxPages")         private var maxPages: Int = 1
     @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
     @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = false
+    @AppStorage("hideStudios")            private var hideStudios: Bool = false
+    @AppStorage("hideApartments")         private var hideApartments: Bool = false
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -389,6 +391,8 @@ private struct ParserSettingsTab: View {
                 Toggle("Авто-детали", isOn: $autoDetail)
                 Toggle("Авто-проверка активности", isOn: $autoCheck)
                 Toggle("Только с детальным парсингом", isOn: $requireDetailParsed)
+                Toggle("Скрывать студии", isOn: $hideStudios)
+                Toggle("Скрывать апартаменты", isOn: $hideApartments)
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")
@@ -402,7 +406,7 @@ private struct ParserSettingsTab: View {
             } header: {
                 Text("Детальный парсинг")
             } footer: {
-                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных из основного списка.")
+                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных.\nСтудии и апартаменты определяются по заголовку, описанию и JSON-полям категории.")
             }
 
             Section {

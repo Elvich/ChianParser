@@ -60,6 +60,24 @@ final class Apartment {
     var isAuction: Bool = false      // Объявление является аукционом
     var isDepositPaid: Bool = false  // В описании упоминается внесённый залог/задаток
 
+    // Тип объекта (устанавливается парсером из JSON; вычисляемые свойства дополняют эвристиками)
+    var isStudioFlag: Bool = false      // Явно определено как студия из JSON (flatType/category)
+    var isApartmentsFlag: Bool = false  // Явно определено как апартаменты из JSON (category)
+
+    /// Студия — из JSON или по заголовку/количеству комнат (работает без детального парсинга)
+    var isStudio: Bool {
+        isStudioFlag
+            || (roomsCount == 0)
+            || title.lowercased().hasPrefix("студия")
+    }
+
+    /// Апартаменты (не жильё) — из JSON или по заголовку/описанию
+    var isApartments: Bool {
+        isApartmentsFlag
+            || title.lowercased().contains("апартамент")
+            || (apartmentDescription?.lowercased().contains("апартамент") ?? false)
+    }
+
     // MARK: - Workflow (статус, заметки, ожидание)
 
     /// Current workflow status (raw string for SwiftData persistence)

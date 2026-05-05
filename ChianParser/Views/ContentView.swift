@@ -60,6 +60,8 @@ struct ContentBody: View {
     @AppStorage("parserMaxPages")          private var maxPages: Int = 1
     @AppStorage("parserMode")              private var parserMode: ParsingMode = .parallel
     @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
+    @AppStorage("hideStudios")             private var hideStudios: Bool = false
+    @AppStorage("hideApartments")          private var hideApartments: Bool = false
 
     @Environment(\.openSettings) private var openSettings
 
@@ -166,6 +168,8 @@ struct ContentBody: View {
             viewModel.maxPages            = maxPages
             viewModel.parsingMode         = parserMode
             viewModel.requireDetailParsed = requireDetailParsed
+            viewModel.hideStudios         = hideStudios
+            viewModel.hideApartments      = hideApartments
         }
         .onChange(of: metroBanlistJSON)   { _, new in
             metroBanlist = MetroBanlist.decode(from: new)
@@ -193,6 +197,14 @@ struct ContentBody: View {
         .onChange(of: parserMode)           { _, v in viewModel.parsingMode = v }
         .onChange(of: requireDetailParsed)  { _, v in
             viewModel.requireDetailParsed = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: hideStudios)    { _, v in
+            viewModel.hideStudios = v
+            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+        }
+        .onChange(of: hideApartments) { _, v in
+            viewModel.hideApartments = v
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
     }

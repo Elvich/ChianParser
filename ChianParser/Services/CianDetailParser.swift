@@ -371,6 +371,26 @@ final class CianDetailParser {
                                   "внесен задаток", "внесён задаток", "внесен аванс", "внесён аванс"]
             apartment.isDepositPaid = depositPhrases.contains { descLower.contains($0) }
 
+            // 10. Тип объекта: студия и апартаменты
+            let category = ((offerNode["category"] as? String) ?? (offerData["category"] as? String) ?? "").lowercased()
+            let flatType  = ((offerNode["flatType"]  as? String) ?? (offerData["flatType"]  as? String)
+                ?? (offerNode["objectType"] as? String) ?? (offerData["objectType"] as? String) ?? "").lowercased()
+            let titleLower = apartment.title.lowercased()
+
+            // Studio: JSON flatType=="studio", or roomsCount==0, or title/description
+            if flatType == "studio" || category.contains("studio")
+                || titleLower.hasPrefix("студия")
+                || descLower.contains("студия") {
+                apartment.isStudioFlag = true
+            }
+            // Апартаменты: Cian category "apartmentSale" / "newBuildingApartmentSale" etc.,
+            // or title/description mention it explicitly
+            if category.contains("apartment")
+                || titleLower.contains("апартамент")
+                || descLower.contains("апартамент") {
+                apartment.isApartmentsFlag = true
+            }
+
             // Дата публикации
             let publishedDateStr = (offerNode["publishedDate"] as? String)
                 ?? (offerData["publishedDate"] as? String)

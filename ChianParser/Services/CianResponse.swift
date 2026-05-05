@@ -131,6 +131,7 @@ final class CianDataExtractor {
                 apartment.metroTransportType = (nearest["travelType"] as? String) ?? (nearest["transportType"] as? String)
             }
 
+            detectApartmentType(apartment: apartment, item: item)
             apartments.append(apartment)
         }
 
@@ -270,12 +271,13 @@ final class CianDataExtractor {
                 apartment.metroTransportType = (nearest["travelType"] as? String) ?? (nearest["transportType"] as? String)
             }
 
+            detectApartmentType(apartment: apartment, item: item)
             apartments.append(apartment)
         }
 
         return apartments.isEmpty ? nil : apartments
     }
-    
+
     // MARK: - HTML Extraction (Fallback) - переименованный старый метод
     static func extractOffersFromHTML(from html: String) -> [Apartment] {
         // Старый рабочий код
@@ -447,6 +449,26 @@ final class CianDataExtractor {
         if let n = value as? NSNumber { return n.doubleValue }
         if let s = value as? String { return Double(s.replacingOccurrences(of: ",", with: ".")) }
         return nil
+    }
+
+    // MARK: - Apartment type detection
+
+    /// Detects studio and apartments (non-residential) flags from a JSON offer dict.
+    /// Called from both API and __NEXT_DATA__ parsers at search-result parse time.
+    private static func detectApartmentType(apartment: Apartment, item: [String: Any]) {
+        let category = ((item["category"] as? String) ?? "").lowercased()
+        let flatType  = ((item["flatType"]  as? String) ?? (item["objectType"] as? String) ?? "").lowercased()
+
+        // Studio: JSON flatType=="studio" or category contains "studio"
+        if flatType == "studio" || category.contains("studio") {
+            apartment.isStudioFlag = true
+        }
+
+        // Апартаменты: Cian uses category "apartmentSale"/"newBuildingApartmentSale" etc.
+        // Key heuristic: category contains "apartment" but NOT "newBuilding" alone.
+        if category.contains("apartment") {
+            apartment.isApartmentsFlag = true
+        }
     }
 }
 
