@@ -64,6 +64,7 @@ struct ContentBody: View {
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
+    @AppStorage("minBuildingFloors")       private var minBuildingFloors: Int = 6
 
     @Environment(\.openSettings) private var openSettings
 
@@ -95,6 +96,34 @@ struct ContentBody: View {
     }
 
     private var coreView: some View {
+        splitView
+            .onChange(of: requireDetailParsed) { _, v in
+                viewModel.requireDetailParsed = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: hideStudios) { _, v in
+                viewModel.hideStudios = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: hideApartments) { _, v in
+                viewModel.hideApartments = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: maxMetroDistance) { _, v in
+                viewModel.maxMetroDistance = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: metroWalkOnly) { _, v in
+                viewModel.metroWalkOnly = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: minBuildingFloors) { _, v in
+                viewModel.minBuildingFloors = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+    }
+
+    private var splitView: some View {
         NavigationSplitView {
             apartmentList
         } detail: {
@@ -124,26 +153,6 @@ struct ContentBody: View {
         .onChange(of: enablePagination)  { _, v in viewModel.enablePagination = v }
         .onChange(of: maxPages)          { _, v in viewModel.maxPages = v }
         .onChange(of: parserMode)        { _, v in viewModel.parsingMode = v }
-        .onChange(of: requireDetailParsed) { _, v in
-            viewModel.requireDetailParsed = v
-            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-        }
-        .onChange(of: hideStudios) { _, v in
-            viewModel.hideStudios = v
-            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-        }
-        .onChange(of: hideApartments) { _, v in
-            viewModel.hideApartments = v
-            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-        }
-        .onChange(of: maxMetroDistance) { _, v in
-            viewModel.maxMetroDistance = v
-            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-        }
-        .onChange(of: metroWalkOnly) { _, v in
-            viewModel.metroWalkOnly = v
-            viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-        }
     }
 
     // MARK: - Toolbar
@@ -232,6 +241,9 @@ struct ContentBody: View {
         viewModel.hideApartments       = hideApartments
         viewModel.maxMetroDistance     = maxMetroDistance
         viewModel.metroWalkOnly        = metroWalkOnly
+        viewModel.minBuildingFloors    = minBuildingFloors
+        // Re-run scoring so all persisted settings take effect on first render
+        viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
     }
 
     // MARK: - Sidebar: Apartment List

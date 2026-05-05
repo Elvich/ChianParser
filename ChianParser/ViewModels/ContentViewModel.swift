@@ -114,6 +114,9 @@ final class ContentViewModel {
     /// When enabled, only walk-accessible metro is accepted (metroTransportType == "walk").
     var metroWalkOnly: Bool = false
 
+    /// Minimum number of floors in the building (0 = no limit). Buildings below this are hidden.
+    var minBuildingFloors: Int = 0
+
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
 
@@ -259,6 +262,8 @@ final class ContentViewModel {
             if apt.isDepositPaid && !showDeposits { return nil }
             // Skip apartments whose nearest metro is in the banlist
             if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
+            // Skip apartments in low-rise buildings (0 = no limit; unknown totalFloors passes through)
+            if minBuildingFloors > 0, let floors = apt.totalFloors, floors < minBuildingFloors { return nil }
             // Skip apartments that exceed the max metro distance (0 = no limit)
             if maxMetroDistance > 0, let dist = apt.metroDistance, dist > maxMetroDistance { return nil }
             // Skip apartments reachable only by transport when walk-only mode is on

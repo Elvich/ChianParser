@@ -68,14 +68,18 @@ final class Apartment {
     var isStudio: Bool {
         isStudioFlag
             || (roomsCount == 0)
-            || title.lowercased().hasPrefix("студия")
+            || title.lowercased().contains("студия")
     }
 
     /// Апартаменты (не жильё) — из JSON или по заголовку/описанию
     var isApartments: Bool {
-        isApartmentsFlag
-            || title.lowercased().contains("апартамент")
-            || (apartmentDescription?.lowercased().contains("апартамент") ?? false)
+        let t = title.lowercased()
+        let d = apartmentDescription?.lowercased() ?? ""
+        return isApartmentsFlag
+            || t.contains("апартамент")
+            || t.contains("апарт-")
+            || d.contains("апартамент")
+            || d.contains("апарт-")
     }
 
     // MARK: - Workflow (статус, заметки, ожидание)

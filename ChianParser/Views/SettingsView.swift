@@ -115,8 +115,9 @@ private struct DemandSettingsTab: View {
 
 private struct MetroBanlistTab: View {
     @AppStorage(MetroBanlist.appStorageKey) private var metroBanlistJSON: String = MetroBanlist.defaultJSON
-    @AppStorage("metroMaxDistance") private var maxMetroDistance: Int = 0
-    @AppStorage("metroWalkOnly")    private var metroWalkOnly: Bool = false
+    @AppStorage("metroMaxDistance")  private var maxMetroDistance: Int = 0
+    @AppStorage("metroWalkOnly")     private var metroWalkOnly: Bool = false
+    @AppStorage("minBuildingFloors") private var minBuildingFloors: Int = 6
 
     @State private var newStation: String = ""
     @State private var searchText: String = ""
@@ -151,6 +152,25 @@ private struct MetroBanlistTab: View {
                             .monospacedDigit()
                     }
                     Stepper("", value: $maxMetroDistance, in: 0...60)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+
+                Divider()
+
+                HStack {
+                    Text("Мин. этажей в доме")
+                    Spacer()
+                    if minBuildingFloors == 0 {
+                        Text("Без ограничения")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("от \(minBuildingFloors) эт.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Stepper("", value: $minBuildingFloors, in: 0...50)
                         .labelsHidden()
                 }
                 .padding(.horizontal, 12)
