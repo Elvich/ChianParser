@@ -32,6 +32,7 @@
 		D40A99952F7AB74C00BA5B15 /* ChianParser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChianParser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D40A99A42F7AB74D00BA5B15 /* ChianParserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChianParserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D40A99AE2F7AB74D00BA5B15 /* ChianParserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChianParserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4EFC2A92FA765B30007C8D1 /* ChianParser.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ChianParser.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -86,6 +87,7 @@
 				D40A99A72F7AB74D00BA5B15 /* ChianParserTests */,
 				D40A99B12F7AB74D00BA5B15 /* ChianParserUITests */,
 				D40A99962F7AB74C00BA5B15 /* Products */,
+				D4EFC2A92FA765B30007C8D1 /* ChianParser.entitlements */,
 			);
 			sourceTree = "<group>";
 		};
@@ -410,6 +412,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ChianParser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -454,6 +457,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ChianParser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

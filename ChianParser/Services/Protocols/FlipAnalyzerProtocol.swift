@@ -9,8 +9,8 @@ protocol FlipAnalyzerProtocol {
     /// Analyze a single apartment given a pre-computed benchmark context.
     func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult
 
-    /// Build a benchmark context from a collection of apartments (computes median price/m² per okrug).
-    func buildBenchmark(from apartments: [Apartment]) -> BenchmarkContext
+    /// Build a benchmark context from a collection of apartments using the target percentile (e.g. 0.8 for 80th percentile).
+    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
 
     /// Extract the Moscow okrug name from an address string (e.g. "ЮВАО", "ЦАО").
     func extractOkrug(from address: String) -> String
@@ -47,6 +47,12 @@ struct BenchmarkContext {
     /// When true, promoted apartments have their view counts penalized.
     let penalizePromotions: Bool
 
+    /// When true, uses the liquidity-optimized bell curve for Area scoring.
+    let useLiquidityAreaScore: Bool
+
+    /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
+    let targetPercentile: Double
+
     init(
         byOkrug: [String: OkrugBenchmark],
         byDistrict: [String: OkrugBenchmark] = [:],
@@ -56,7 +62,9 @@ struct BenchmarkContext {
         districtScores: [String: Int] = [:],
         useDistrictScore: Bool = false,
         benchmarkMode: BenchmarkMode = .okrug,
-        penalizePromotions: Bool = true
+        penalizePromotions: Bool = true,
+        useLiquidityAreaScore: Bool = false,
+        targetPercentile: Double = 0.5
     ) {
         self.byOkrug = byOkrug
         self.byDistrict = byDistrict
@@ -67,6 +75,8 @@ struct BenchmarkContext {
         self.useDistrictScore = useDistrictScore
         self.benchmarkMode = benchmarkMode
         self.penalizePromotions = penalizePromotions
+        self.useLiquidityAreaScore = useLiquidityAreaScore
+        self.targetPercentile = targetPercentile
     }
 
     static let empty = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)

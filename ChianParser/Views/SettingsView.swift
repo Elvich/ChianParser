@@ -52,6 +52,7 @@ private struct DemandSettingsTab: View {
     @AppStorage("demandThresholdModerate") private var moderate: Int = DemandThresholds.default.moderate
     @AppStorage("demandThresholdMarket")   private var market: Int   = DemandThresholds.default.market
     @AppStorage("demandThresholdHot")      private var hot: Int      = DemandThresholds.default.hot
+    @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
 
     var body: some View {
         Form {
@@ -70,6 +71,14 @@ private struct DemandSettingsTab: View {
                 demandRow(.moderate, label: "≥ \(moderate) просм./день")
                 demandRow(.market,   label: "≥ \(market) просм./день")
                 demandRow(.hot,      label: "≥ \(hot) просм./день")
+            }
+
+            Section {
+                Toggle("Кривая ликвидности для площади", isOn: $useLiquidityAreaScore)
+            } header: {
+                Text("Оценка площади (FlipScore)")
+            } footer: {
+                Text("Оптимизирует баллы под флиппинг (максимум за 35-50 м², штраф за неликвидные размеры). При выключенном ползунке используется стандартная логика 'чем больше, тем лучше'.")
             }
 
             Section {
@@ -546,6 +555,7 @@ private struct ParserSettingsTab: View {
 private struct DistrictsSettingsTab: View {
     @AppStorage("districtModeEnabled")      private var districtMode: Bool = false
     @AppStorage("benchmarkMode")            private var benchmarkMode: BenchmarkMode = .okrug
+    @AppStorage("targetPercentile")         private var targetPercentile: Double = 0.5
     @AppStorage(DistrictRanking.scoresKey)  private var scoresJSON: String = DistrictRanking.defaultScoresJSON
 
     @Environment(AppContainer.self) private var container
@@ -579,6 +589,14 @@ private struct DistrictsSettingsTab: View {
                     .pickerStyle(.menu)
                     .frame(width: 250)
                     .help("Медианная цена. Умный режим ищет 5+ квартир у метро, иначе берёт район, затем АО.")
+
+                    HStack {
+                        Text("Перцентиль эталона: \(Int(targetPercentile * 100))%")
+                            .frame(width: 170, alignment: .leading)
+                        Slider(value: $targetPercentile, in: 0.1...0.95, step: 0.05)
+                            .frame(width: 120)
+                    }
+                    .help("Перцентиль 50% — обычная медиана. 80-90% — цена готовой квартиры с хорошим ремонтом (верх рынка). Полезно для оценки флип-маржи.")
                 }
                 .font(.subheadline)
                 Spacer()
@@ -586,6 +604,7 @@ private struct DistrictsSettingsTab: View {
                     scoresJSON = DistrictRanking.defaultScoresJSON
                     districtMode = false
                     benchmarkMode = .okrug
+                    targetPercentile = 0.5
                 }
                 .foregroundStyle(.red)
                 .font(.caption)

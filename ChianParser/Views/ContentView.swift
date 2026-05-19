@@ -63,6 +63,8 @@ struct ContentBody: View {
     @AppStorage("hideStudios")             private var hideStudios: Bool = false
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")      private var penalizePromotions: Bool = true
+    @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
+    @AppStorage("targetPercentile")        private var targetPercentile: Double = 0.5
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
     @AppStorage("minBuildingFloors")       private var minBuildingFloors: Int = 6
@@ -112,6 +114,14 @@ struct ContentBody: View {
             }
             .onChange(of: penalizePromotions) { _, v in
                 viewModel.penalizePromotions = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: useLiquidityAreaScore) { _, v in
+                viewModel.useLiquidityAreaScore = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: targetPercentile) { _, v in
+                viewModel.targetPercentile = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: maxMetroDistance) { _, v in
@@ -245,6 +255,8 @@ struct ContentBody: View {
         viewModel.hideStudios          = hideStudios
         viewModel.hideApartments       = hideApartments
         viewModel.penalizePromotions   = penalizePromotions
+        viewModel.useLiquidityAreaScore = useLiquidityAreaScore
+        viewModel.targetPercentile     = targetPercentile
         viewModel.maxMetroDistance     = maxMetroDistance
         viewModel.metroWalkOnly        = metroWalkOnly
         viewModel.minBuildingFloors    = minBuildingFloors

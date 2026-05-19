@@ -19,7 +19,7 @@ final class FlipAnalyzer {}
 
 extension FlipAnalyzer: FlipAnalyzerProtocol {
 
-    func buildBenchmark(from apartments: [Apartment]) -> BenchmarkContext {
+    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext {
         var okrugGroups: [String: [Double]] = [:]
         var districtGroups: [String: [Double]] = [:]
         var metroGroups: [String: [Double]] = [:]
@@ -43,7 +43,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         var byOkrug: [String: OkrugBenchmark] = [:]
         for (okrug, prices) in okrugGroups where prices.count >= minSamples {
             byOkrug[okrug] = OkrugBenchmark(
-                medianPriceSqm: median(of: prices),
+                medianPriceSqm: percentile(of: prices, target: targetPercentile),
                 sampleSize: prices.count,
                 okrug: okrug
             )
@@ -52,7 +52,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         var byDistrict: [String: OkrugBenchmark] = [:]
         for (district, prices) in districtGroups where prices.count >= minSamples {
             byDistrict[district] = OkrugBenchmark(
-                medianPriceSqm: median(of: prices),
+                medianPriceSqm: percentile(of: prices, target: targetPercentile),
                 sampleSize: prices.count,
                 okrug: district  // store district name in 'okrug' field for display
             )
@@ -61,13 +61,13 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         var byMetro: [String: OkrugBenchmark] = [:]
         for (metro, prices) in metroGroups where prices.count >= minSamples {
             byMetro[metro] = OkrugBenchmark(
-                medianPriceSqm: median(of: prices),
+                medianPriceSqm: percentile(of: prices, target: targetPercentile),
                 sampleSize: prices.count,
                 okrug: metro  // store metro name in 'okrug' field for display
             )
         }
 
-        let globalMedian = allPricesSqm.count >= minSamples ? median(of: allPricesSqm) : nil
+        let globalMedian = allPricesSqm.count >= minSamples ? percentile(of: allPricesSqm, target: targetPercentile) : nil
 
         // districtScores, useDistrictScore, benchmarkMode enriched by ContentViewModel
         return BenchmarkContext(
@@ -123,7 +123,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm)
         let metroScore = computeMetroScore(apartment: apartment)
         let (locationScore, isDistrictScore) = computeLocationScore(apartment: apartment, benchmark: benchmark)
-        let areaScore  = computeAreaScore(apartment: apartment)
+        let areaScore  = computeAreaScore(apartment: apartment, benchmark: benchmark)
         let sellerBonus = computeSellerBonus(apartment: apartment)
 
         let total = priceScore + metroScore + locationScore + areaScore + sellerBonus
@@ -215,14 +215,25 @@ private extension FlipAnalyzer {
         return 20
     }
 
-    /// Area score: max 15 pts. ≥60 m² → 15, ≥45 → 11, ≥30 → 6, <30 → 2.
-    func computeAreaScore(apartment: Apartment) -> Int {
+    /// Area score: max 15 pts.
+    /// Liquidity mode (bell curve): 35-50 → 15, 25-35 → 11, 51-70 → 6, else → 2.
+    /// Default mode (linear): ≥60 → 15, ≥45 → 11, ≥30 → 6, <30 → 2.
+    func computeAreaScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
         guard let area = apartment.area else { return 0 }
-        switch area {
-        case 60...: return 15
-        case 45...: return 11
-        case 30...: return 6
-        default:    return 2
+        if benchmark.useLiquidityAreaScore {
+            switch area {
+            case 35.0...50.0: return 15
+            case 25.0..<35.0: return 11
+            case 50.0...70.0: return 6
+            default:          return 2
+            }
+        } else {
+            switch area {
+            case 60...: return 15
+            case 45...: return 11
+            case 30...: return 6
+            default:    return 2
+            }
         }
     }
 
@@ -427,12 +438,17 @@ extension FlipAnalyzer {
 
 private extension FlipAnalyzer {
 
-    func median(of values: [Double]) -> Double {
+    func percentile(of values: [Double], target: Double) -> Double {
+        guard !values.isEmpty else { return 0 }
         let sorted = values.sorted()
-        let mid = sorted.count / 2
-        return sorted.count.isMultiple(of: 2)
-            ? (sorted[mid - 1] + sorted[mid]) / 2
-            : sorted[mid]
+        if target <= 0.0 { return sorted.first! }
+        if target >= 1.0 { return sorted.last! }
+        let index = Double(sorted.count - 1) * target
+        let lower = Int(floor(index))
+        let upper = Int(ceil(index))
+        if lower == upper { return sorted[lower] }
+        let weight = index - Double(lower)
+        return sorted[lower] * (1.0 - weight) + sorted[upper] * weight
     }
 
 }

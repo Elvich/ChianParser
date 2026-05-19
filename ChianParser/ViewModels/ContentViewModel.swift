@@ -111,6 +111,12 @@ final class ContentViewModel {
     /// When enabled, promoted listings have their score penalized.
     var penalizePromotions: Bool = true
 
+    /// When enabled, uses the liquidity-optimized bell curve for Area scoring.
+    var useLiquidityAreaScore: Bool = false
+
+    /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
+    var targetPercentile: Double = 0.5
+
     /// Maximum metro distance in minutes (0 = no limit). Apartments exceeding this are hidden.
     var maxMetroDistance: Int = 0
 
@@ -217,7 +223,7 @@ final class ContentViewModel {
     func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds, metroBanlist: Set<String>) {
         // Build benchmark from ALL apartments (not just visible ones) for accurate pricing,
         // then enrich with district scoring settings from ContentViewModel.
-        let base = flipAnalyzer.buildBenchmark(from: apartments)
+        let base = flipAnalyzer.buildBenchmark(from: apartments, targetPercentile: targetPercentile)
         let benchmark = BenchmarkContext(
             byOkrug: base.byOkrug,
             byDistrict: base.byDistrict,
@@ -227,7 +233,9 @@ final class ContentViewModel {
             districtScores: districtScores,
             useDistrictScore: useDistrictScore,
             benchmarkMode: benchmarkMode,
-            penalizePromotions: penalizePromotions
+            penalizePromotions: penalizePromotions,
+            useLiquidityAreaScore: useLiquidityAreaScore,
+            targetPercentile: targetPercentile
         )
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
