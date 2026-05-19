@@ -608,6 +608,11 @@ final class ContentViewModel {
         detailLoader.loadDetailPages(for: apartments)
     }
 
+    func prioritizeDetailParsing(for apartment: Apartment) {
+        log = "⚡️ Приоритетный парсинг: \(apartment.title)"
+        detailLoader.prioritize(apartment)
+    }
+
     /// Queues apartments not seen in search for staleDaysThreshold+ days for re-check.
     /// Skips .ban and .deal — those are terminal statuses.
     func checkStaleApartments(from apartments: [Apartment]) {

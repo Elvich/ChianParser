@@ -101,6 +101,39 @@ final class DetailPageLoader: NSObject {
         statusMessage = "Остановлено пользователем"
     }
 
+    /// Prioritizes a specific apartment, stopping the current load if necessary
+    /// to load this one immediately without waiting in queue.
+    func prioritize(_ apartment: Apartment) {
+        guard !apartment.isDetailedParsed else { return }
+        
+        // Remove it from the queue if it's already there to avoid duplicates
+        apartmentsQueue.removeAll(where: { $0.id == apartment.id })
+        
+        // Put it at the very front
+        apartmentsQueue.insert(apartment, at: 0)
+        
+        if isLoading {
+            // Preempt the current load
+            webView?.stopLoading()
+            
+            // Re-enqueue the interrupted apartment so it isn't lost
+            if let current = currentApartment, current.id != apartment.id {
+                apartmentsQueue.insert(current, at: 1)
+                // Adjust progress since we didn't finish this one
+                if currentProgress > 0 { currentProgress -= 1 }
+            }
+            
+            currentApartment = nil
+            statusMessage = "⚡️ Приоритетная загрузка..."
+            loadNextApartment()
+        } else {
+            totalPages += 1
+            isLoading = true
+            statusMessage = "⚡️ Приоритетная загрузка..."
+            loadNextApartment()
+        }
+    }
+
     // MARK: - Internal Processing
 
     private func loadNextApartment() {

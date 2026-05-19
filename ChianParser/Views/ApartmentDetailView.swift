@@ -11,6 +11,7 @@ import SwiftData
 struct ApartmentDetailView: View {
     @Bindable var apartment: Apartment
     let flipScore: FlipScoreResult?
+    var onAppearAction: (() -> Void)? = nil
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -49,6 +50,9 @@ struct ApartmentDetailView: View {
                     Label("К парсеру", systemImage: "chevron.left")
                 }
             }
+        }
+        .onAppear {
+            onAppearAction?()
         }
     }
 

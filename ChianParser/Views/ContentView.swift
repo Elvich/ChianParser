@@ -333,7 +333,9 @@ struct ContentBody: View {
         .sheet(item: $urlSearchResult) { apartment in
             NavigationStack {
                 let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
-                ApartmentDetailView(apartment: apartment, flipScore: flipScore)
+                ApartmentDetailView(apartment: apartment, flipScore: flipScore) {
+                    viewModel.prioritizeDetailParsing(for: apartment)
+                }
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Закрыть") { urlSearchResult = nil }
@@ -346,7 +348,9 @@ struct ContentBody: View {
         .navigationSubtitle(viewModel.detailLoader.isLoading ? viewModel.detailLoader.statusMessage : "")
         .navigationDestination(for: Apartment.self) { apartment in
             let flipScore = viewModel.cachedScores.first(where: { $0.0.id == apartment.id })?.1
-            ApartmentDetailView(apartment: apartment, flipScore: flipScore)
+            ApartmentDetailView(apartment: apartment, flipScore: flipScore) {
+                viewModel.prioritizeDetailParsing(for: apartment)
+            }
         }
     }
 
