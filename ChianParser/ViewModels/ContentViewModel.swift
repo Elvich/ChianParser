@@ -108,6 +108,12 @@ final class ContentViewModel {
     /// When enabled, апартаменты (isApartments == true) are excluded from the scored list.
     var hideApartments: Bool = false
 
+    /// When enabled, listings with paid Top/Premium promotion are hidden.
+    var hideTopPromotion: Bool = false
+
+    /// When enabled, listings with paid Standard promotion are also hidden (in addition to hideTopPromotion).
+    var hideStandardPromotion: Bool = false
+
     /// Maximum metro distance in minutes (0 = no limit). Apartments exceeding this are hidden.
     var maxMetroDistance: Int = 0
 
@@ -161,8 +167,8 @@ final class ContentViewModel {
     /// Synced from AppStorage via ContentView.
     var districtScores: [String: Int] = DistrictRanking.defaultScores
 
-    /// When true, price benchmark uses district-level median instead of okrug-level.
-    var useDistrictBenchmark: Bool = false
+    /// Mode for calculating price benchmark.
+    var benchmarkMode: BenchmarkMode = .okrug
 
     /// Districts currently shown. Empty = show all (only active when useDistrictScore is true).
     var activeDistrictFilters: Set<String> = []
@@ -218,11 +224,12 @@ final class ContentViewModel {
         let benchmark = BenchmarkContext(
             byOkrug: base.byOkrug,
             byDistrict: base.byDistrict,
+            byMetro: base.byMetro,
             globalMedian: base.globalMedian,
             globalSampleSize: base.globalSampleSize,
             districtScores: districtScores,
             useDistrictScore: useDistrictScore,
-            useDistrictBenchmark: useDistrictBenchmark
+            benchmarkMode: benchmarkMode
         )
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
@@ -257,6 +264,12 @@ final class ContentViewModel {
             // Skip studios and апартаменты when their respective hide flags are active
             if hideStudios && apt.isStudio { return nil }
             if hideApartments && apt.isApartments { return nil }
+            // Skip promoted listings based on user preference
+            if hideTopPromotion && apt.isPaidPromotion {
+                // "standard" promotion is only hidden if hideStandardPromotion is also on
+                let isStandardOnly = apt.promotionType == "standard"
+                if !isStandardOnly || hideStandardPromotion { return nil }
+            }
             // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
             if apt.isAuction && !showAuctions { return nil }
             if apt.isDepositPaid && !showDeposits { return nil }

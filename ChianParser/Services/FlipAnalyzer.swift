@@ -22,6 +22,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
     func buildBenchmark(from apartments: [Apartment]) -> BenchmarkContext {
         var okrugGroups: [String: [Double]] = [:]
         var districtGroups: [String: [Double]] = [:]
+        var metroGroups: [String: [Double]] = [:]
         var allPricesSqm: [Double] = []
 
         for apt in apartments {
@@ -32,6 +33,9 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             allPricesSqm.append(priceSqm)
             if let district = apt.district {
                 districtGroups[district, default: []].append(priceSqm)
+            }
+            if let metro = apt.metro {
+                metroGroups[metro, default: []].append(priceSqm)
             }
         }
 
@@ -54,12 +58,22 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             )
         }
 
+        var byMetro: [String: OkrugBenchmark] = [:]
+        for (metro, prices) in metroGroups where prices.count >= minSamples {
+            byMetro[metro] = OkrugBenchmark(
+                medianPriceSqm: median(of: prices),
+                sampleSize: prices.count,
+                okrug: metro  // store metro name in 'okrug' field for display
+            )
+        }
+
         let globalMedian = allPricesSqm.count >= minSamples ? median(of: allPricesSqm) : nil
 
-        // districtScores, useDistrictScore, useDistrictBenchmark enriched by ContentViewModel
+        // districtScores, useDistrictScore, benchmarkMode enriched by ContentViewModel
         return BenchmarkContext(
             byOkrug: byOkrug,
             byDistrict: byDistrict,
+            byMetro: byMetro,
             globalMedian: globalMedian,
             globalSampleSize: allPricesSqm.count
         )
@@ -73,18 +87,33 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
         let okrug = extractOkrug(from: apartment.address)
 
-        // Choose benchmark source: district-level (more precise) or okrug-level (default)
-        let benchmarkSqm: Double?
-        let benchmarkOkrug: String?
-        let sampleSize: Int
+        var benchmarkSqm: Double?
+        var benchmarkOkrug: String?
+        var sampleSize: Int = 0
+        var foundBenchmark = false
 
-        if benchmark.useDistrictBenchmark,
-           let district = apartment.district,
-           let districtBM = benchmark.byDistrict[district] {
-            benchmarkSqm = districtBM.medianPriceSqm
-            benchmarkOkrug = districtBM.okrug
-            sampleSize = districtBM.sampleSize
-        } else {
+        if benchmark.benchmarkMode == .smart {
+            if let metro = apartment.metro, let metroBM = benchmark.byMetro[metro] {
+                benchmarkSqm = metroBM.medianPriceSqm
+                benchmarkOkrug = metroBM.okrug
+                sampleSize = metroBM.sampleSize
+                foundBenchmark = true
+            } else if let district = apartment.district, let districtBM = benchmark.byDistrict[district] {
+                benchmarkSqm = districtBM.medianPriceSqm
+                benchmarkOkrug = districtBM.okrug
+                sampleSize = districtBM.sampleSize
+                foundBenchmark = true
+            }
+        } else if benchmark.benchmarkMode == .district {
+            if let district = apartment.district, let districtBM = benchmark.byDistrict[district] {
+                benchmarkSqm = districtBM.medianPriceSqm
+                benchmarkOkrug = districtBM.okrug
+                sampleSize = districtBM.sampleSize
+                foundBenchmark = true
+            }
+        }
+
+        if !foundBenchmark {
             let okrugBM = benchmark.byOkrug[okrug]
             benchmarkSqm = okrugBM?.medianPriceSqm ?? benchmark.globalMedian
             benchmarkOkrug = okrugBM?.okrug
@@ -95,8 +124,9 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         let metroScore = computeMetroScore(apartment: apartment)
         let (locationScore, isDistrictScore) = computeLocationScore(apartment: apartment, benchmark: benchmark)
         let areaScore  = computeAreaScore(apartment: apartment)
+        let sellerBonus = computeSellerBonus(apartment: apartment)
 
-        let total = priceScore + metroScore + locationScore + areaScore
+        let total = priceScore + metroScore + locationScore + areaScore + sellerBonus
 
         let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds)
 
@@ -107,6 +137,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             locationScore: locationScore,
             isDistrictScore: isDistrictScore,
             areaScore: areaScore,
+            sellerBonus: sellerBonus,
             priceSqm: priceSqm,
             benchmarkSqm: benchmarkSqm,
             benchmarkOkrug: benchmarkOkrug,
@@ -195,7 +226,7 @@ private extension FlipAnalyzer {
         }
     }
 
-    /// Compute demand level from views/day.
+    /// Demand computation from views/day.
     func computeDemand(apartment: Apartment, thresholds: DemandThresholds) -> (DemandLevel, Double?) {
         guard let viewsToday = apartment.viewsToday, viewsToday > 0 else {
             if let total = apartment.viewsTotal, total > 0, let published = apartment.publishedDate {
@@ -207,6 +238,24 @@ private extension FlipAnalyzer {
         }
         let perDay = Double(viewsToday)
         return (demandLevel(perDay: perDay, thresholds: thresholds), perDay)
+    }
+
+    /// Seller bonus: +3 for agent/agency, 0 for owner or unknown.
+    ///
+    /// Normalises the many string variants Cian uses for seller type.
+    /// Falls back to sellerName when sellerType is nil — catches agency brand names
+    /// like "Real Estate EXPERT" when the type field is missing from JSON.
+    func computeSellerBonus(apartment: Apartment) -> Int {
+        // Prefer type field; fall back to name to catch agency brands
+        let raw = apartment.sellerType ?? apartment.sellerName ?? ""
+        let t = raw.lowercased()
+        let isProfessional = t.contains("agent") || t.contains("agency")
+            || t.contains("риелтор") || t.contains("агент")
+            || t.contains("агентство")
+            || t.contains("real estate") || t.contains("realty")
+            || t.contains("недвижимость")  // ИНКОМ-Недвижимость, Этажи и т.п.
+            || t.contains("developer") || t.contains("застройщик")
+        return isProfessional ? 3 : 0
     }
 
     func demandLevel(perDay: Double, thresholds: DemandThresholds) -> DemandLevel {

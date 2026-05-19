@@ -371,6 +371,21 @@ final class CianDetailParser {
                                   "внесен задаток", "внесён задаток", "внесен аванс", "внесён аванс"]
             apartment.isDepositPaid = depositPhrases.contains { descLower.contains($0) }
 
+            // 11. Платное продвижение (Топ, Премиум, Стандарт)
+            // placementType / promotionType могут лежать в offerNode, offerData или корне JSON
+            let placement = ((offerNode["placementType"] as? String)
+                ?? (offerData["placementType"] as? String)
+                ?? (offerNode["promotionType"] as? String)
+                ?? (offerData["promotionType"] as? String)
+                ?? (findValue(forKey: "placementType", in: jsonObject) as? String)
+                ?? (findValue(forKey: "promotionType", in: jsonObject) as? String)
+                ?? "").lowercased()
+            if !placement.isEmpty && placement != "simple" && placement != "organic" {
+                apartment.isPaidPromotion = true
+                apartment.promotionType = placement
+                print("  📢 Продвижение: \(placement) — \(apartment.id)")
+            }
+
             // 10. Тип объекта: студия и апартаменты
             let category = ((offerNode["category"] as? String) ?? (offerData["category"] as? String) ?? "").lowercased()
             let flatType  = ((offerNode["flatType"]  as? String) ?? (offerData["flatType"]  as? String)

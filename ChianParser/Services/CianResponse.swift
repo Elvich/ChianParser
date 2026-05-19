@@ -132,6 +132,7 @@ final class CianDataExtractor {
             }
 
             detectApartmentType(apartment: apartment, item: item)
+            detectSellerType(apartment: apartment, item: item)
             apartments.append(apartment)
         }
 
@@ -272,6 +273,7 @@ final class CianDataExtractor {
             }
 
             detectApartmentType(apartment: apartment, item: item)
+            detectSellerType(apartment: apartment, item: item)
             apartments.append(apartment)
         }
 
@@ -451,9 +453,8 @@ final class CianDataExtractor {
         return nil
     }
 
-    // MARK: - Apartment type detection
-
     /// Detects studio and apartments (non-residential) flags from a JSON offer dict.
+    /// Also detects paid promotion (placementType/promotionType fields).
     /// Called from both API and __NEXT_DATA__ parsers at search-result parse time.
     private static func detectApartmentType(apartment: Apartment, item: [String: Any]) {
         let category = ((item["category"] as? String) ?? "").lowercased()
@@ -468,6 +469,39 @@ final class CianDataExtractor {
         // Key heuristic: category contains "apartment" but NOT "newBuilding" alone.
         if category.contains("apartment") {
             apartment.isApartmentsFlag = true
+        }
+
+        // Paid promotion: placementType or promotionType fields
+        // Known values: "top3", "premium", "standard", "simple" (organic, no promotion)
+        let placement = ((item["placementType"] as? String)
+            ?? (item["promotionType"] as? String)
+            ?? (item["listingType"] as? String)
+            ?? "").lowercased()
+        if !placement.isEmpty && placement != "simple" && placement != "organic" {
+            apartment.isPaidPromotion = true
+            apartment.promotionType = placement
+        }
+    }
+
+    /// Extracts sellerType from a search-result JSON item.
+    /// Cian encodes seller info in several possible paths — we check all of them.
+    /// Values seen: "homeowner", "agent", "agency", "realtorAgency", "developer", etc.
+    private static func detectSellerType(apartment: Apartment, item: [String: Any]) {
+        // Path 1: item["user"]["userType"] (most common in __NEXT_DATA__)
+        if let user = item["user"] as? [String: Any],
+           let userType = user["userType"] as? String, !userType.isEmpty {
+            apartment.sellerType = userType
+            return
+        }
+        // Path 2: item["agent"]["category"]
+        if let agent = item["agent"] as? [String: Any],
+           let category = agent["category"] as? String, !category.isEmpty {
+            apartment.sellerType = category
+            return
+        }
+        // Path 3: item["sellerType"] / item["userType"] directly
+        if let t = (item["sellerType"] as? String) ?? (item["userType"] as? String), !t.isEmpty {
+            apartment.sellerType = t
         }
     }
 }

@@ -49,7 +49,7 @@ struct ContentBody: View {
 
     // District settings — synced to viewModel on change
     @AppStorage("districtModeEnabled")          private var districtModeEnabled: Bool = false
-    @AppStorage("districtBenchmarkEnabled")     private var districtBenchmarkEnabled: Bool = false
+    @AppStorage("benchmarkMode")                private var benchmarkMode: BenchmarkMode = .okrug
     @AppStorage(DistrictRanking.scoresKey)      private var districtScoresJSON: String = DistrictRanking.defaultScoresJSON
 
     // Parser settings from AppStorage (shared with SettingsView → Парсинг tab)
@@ -62,6 +62,8 @@ struct ContentBody: View {
     @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
     @AppStorage("hideStudios")             private var hideStudios: Bool = false
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
+    @AppStorage("hideTopPromotion")        private var hideTopPromotion: Bool = false
+    @AppStorage("hideStandardPromotion")   private var hideStandardPromotion: Bool = false
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
     @AppStorage("minBuildingFloors")       private var minBuildingFloors: Int = 6
@@ -109,6 +111,14 @@ struct ContentBody: View {
                 viewModel.hideApartments = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
+            .onChange(of: hideTopPromotion) { _, v in
+                viewModel.hideTopPromotion = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: hideStandardPromotion) { _, v in
+                viewModel.hideStandardPromotion = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
             .onChange(of: maxMetroDistance) { _, v in
                 viewModel.maxMetroDistance = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
@@ -138,8 +148,8 @@ struct ContentBody: View {
             viewModel.activeDistrictFilters = []
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
-        .onChange(of: districtBenchmarkEnabled) { _, v in
-            viewModel.useDistrictBenchmark = v
+        .onChange(of: benchmarkMode) { _, v in
+            viewModel.benchmarkMode = v
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
         .onChange(of: districtScoresJSON) { _, new in
@@ -228,7 +238,7 @@ struct ContentBody: View {
         metroBanlist = MetroBanlist.decode(from: metroBanlistJSON)
         searchURLs   = SearchURLList.decode(from: searchURLListJSON)
         viewModel.useDistrictScore     = districtModeEnabled
-        viewModel.useDistrictBenchmark = districtBenchmarkEnabled
+        viewModel.benchmarkMode        = benchmarkMode
         viewModel.districtScores       = DistrictRanking.decodeScores(from: districtScoresJSON)
         viewModel.autoDetailParsing    = autoDetail
         viewModel.autoCheckActivity    = autoCheck
@@ -239,6 +249,8 @@ struct ContentBody: View {
         viewModel.requireDetailParsed  = requireDetailParsed
         viewModel.hideStudios          = hideStudios
         viewModel.hideApartments       = hideApartments
+        viewModel.hideTopPromotion     = hideTopPromotion
+        viewModel.hideStandardPromotion = hideStandardPromotion
         viewModel.maxMetroDistance     = maxMetroDistance
         viewModel.metroWalkOnly        = metroWalkOnly
         viewModel.minBuildingFloors    = minBuildingFloors

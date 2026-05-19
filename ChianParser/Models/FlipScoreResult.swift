@@ -114,6 +114,7 @@ struct FlipScoreResult {
     let locationScore: Int  // max 20 — floor position (default) or district rank (district mode)
     let isDistrictScore: Bool // true when locationScore reflects district ranking
     let areaScore: Int      // max 15 — apartment area
+    let sellerBonus: Int    // +3 if agent/agency/developer, 0 if owner or unknown
 
     // Benchmark context
     let priceSqm: Double?        // calculated price per m² for this apartment

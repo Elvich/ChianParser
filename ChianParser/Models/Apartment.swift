@@ -60,6 +60,10 @@ final class Apartment {
     var isAuction: Bool = false      // Объявление является аукционом
     var isDepositPaid: Bool = false  // В описании упоминается внесённый залог/задаток
 
+    // Платное продвижение на Циан (Топ, Премиум, Стандарт)
+    var isPaidPromotion: Bool = false  // Есть платное продвижение (top3/premium/standard)
+    var promotionType: String? = nil   // Тип: "top3", "premium", "standard" (nil = органика)
+
     // Тип объекта (устанавливается парсером из JSON; вычисляемые свойства дополняют эвристиками)
     var isStudioFlag: Bool = false      // Явно определено как студия из JSON (flatType/category)
     var isApartmentsFlag: Bool = false  // Явно определено как апартаменты из JSON (category)

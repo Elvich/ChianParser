@@ -32,34 +32,45 @@ struct BenchmarkContext {
     /// Median price/m² per district (район). Same struct as okrug benchmark.
     let byDistrict: [String: OkrugBenchmark]
 
+    /// Median price/m² per metro station. Same struct as okrug benchmark.
+    let byMetro: [String: OkrugBenchmark]
+
     /// Per-district/okrug scores. Score -1 = banned (handled upstream).
     let districtScores: [String: Int]
 
     /// When true, district score is used instead of floor position for location score.
     let useDistrictScore: Bool
 
-    /// When true, district-level median is used for price benchmark instead of okrug-level.
-    let useDistrictBenchmark: Bool
+    /// Mode for calculating price benchmark.
+    let benchmarkMode: BenchmarkMode
 
     init(
         byOkrug: [String: OkrugBenchmark],
         byDistrict: [String: OkrugBenchmark] = [:],
+        byMetro: [String: OkrugBenchmark] = [:],
         globalMedian: Double?,
         globalSampleSize: Int,
         districtScores: [String: Int] = [:],
         useDistrictScore: Bool = false,
-        useDistrictBenchmark: Bool = false
+        benchmarkMode: BenchmarkMode = .okrug
     ) {
         self.byOkrug = byOkrug
         self.byDistrict = byDistrict
+        self.byMetro = byMetro
         self.globalMedian = globalMedian
         self.globalSampleSize = globalSampleSize
         self.districtScores = districtScores
         self.useDistrictScore = useDistrictScore
-        self.useDistrictBenchmark = useDistrictBenchmark
+        self.benchmarkMode = benchmarkMode
     }
 
     static let empty = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+}
+
+enum BenchmarkMode: String {
+    case okrug
+    case district
+    case smart
 }
 
 struct OkrugBenchmark {

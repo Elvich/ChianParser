@@ -418,6 +418,8 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = false
     @AppStorage("hideStudios")            private var hideStudios: Bool = false
     @AppStorage("hideApartments")         private var hideApartments: Bool = false
+    @AppStorage("hideTopPromotion")       private var hideTopPromotion: Bool = false
+    @AppStorage("hideStandardPromotion")  private var hideStandardPromotion: Bool = false
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -446,6 +448,9 @@ private struct ParserSettingsTab: View {
                 Toggle("Только с детальным парсингом", isOn: $requireDetailParsed)
                 Toggle("Скрывать студии", isOn: $hideStudios)
                 Toggle("Скрывать апартаменты", isOn: $hideApartments)
+                Toggle("Скрывать Топ / Премиум (платное продвижение)", isOn: $hideTopPromotion)
+                Toggle("Скрывать Стандарт тоже", isOn: $hideStandardPromotion)
+                    .disabled(!hideTopPromotion)
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")
@@ -459,7 +464,7 @@ private struct ParserSettingsTab: View {
             } header: {
                 Text("Детальный парсинг")
             } footer: {
-                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных.\nСтудии и апартаменты определяются по заголовку, описанию и JSON-полям категории.")
+                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных.\nСтудии и апартаменты определяются по заголовку, описанию и JSON-полям категории.\nПлатное продвижение — Топ/Премиум скрывает объявления с покупными просмотрами из-за рекламы; Стандарт — наименее агрессивный вариант.")
             }
 
             Section {
@@ -542,7 +547,7 @@ private struct ParserSettingsTab: View {
 
 private struct DistrictsSettingsTab: View {
     @AppStorage("districtModeEnabled")      private var districtMode: Bool = false
-    @AppStorage("districtBenchmarkEnabled") private var districtBenchmark: Bool = false
+    @AppStorage("benchmarkMode")            private var benchmarkMode: BenchmarkMode = .okrug
     @AppStorage(DistrictRanking.scoresKey)  private var scoresJSON: String = DistrictRanking.defaultScoresJSON
 
     @Environment(AppContainer.self) private var container
@@ -563,19 +568,26 @@ private struct DistrictsSettingsTab: View {
         VStack(spacing: 0) {
             // Mode toggles + reset bar
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 12) {
                     Toggle("Баллы по районам", isOn: $districtMode)
+                        .toggleStyle(.switch)
                         .help("Локация во FlipScore считается по баллу района, а не по этажу")
-                    Toggle("Эталон по районам", isOn: $districtBenchmark)
-                        .help("Медианная цена считается по конкретному району, а не по АО. Требует достаточно квартир (≥5) в каждом районе.")
+                    
+                    Picker("Эталон цены:", selection: $benchmarkMode) {
+                        Text("Округа (АО)").tag(BenchmarkMode.okrug)
+                        Text("Районы").tag(BenchmarkMode.district)
+                        Text("Умный (Метро → Район)").tag(BenchmarkMode.smart)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 250)
+                    .help("Медианная цена. Умный режим ищет 5+ квартир у метро, иначе берёт район, затем АО.")
                 }
-                .toggleStyle(.switch)
                 .font(.subheadline)
                 Spacer()
                 Button("Сброс") {
                     scoresJSON = DistrictRanking.defaultScoresJSON
                     districtMode = false
-                    districtBenchmark = false
+                    benchmarkMode = .okrug
                 }
                 .foregroundStyle(.red)
                 .font(.caption)

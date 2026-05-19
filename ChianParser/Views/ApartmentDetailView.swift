@@ -245,6 +245,19 @@ struct ApartmentDetailView: View {
 
     // MARK: - Продавец
 
+    /// Returns true when the seller is identifiable as a professional (agent or agency).
+    /// Falls back to sellerName when sellerType is nil — catches cases like "Real Estate EXPERT".
+    private var isSellerProfessional: Bool {
+        let raw = apartment.sellerType ?? apartment.sellerName ?? ""
+        let t = raw.lowercased()
+        return t.contains("agent") || t.contains("agency")
+            || t.contains("риелтор") || t.contains("агент")
+            || t.contains("агентство")
+            || t.contains("real estate") || t.contains("realty")
+            || t.contains("недвижимость")  // ИНКОМ-Недвижимость, Этажи и т.п.
+            || t.contains("developer") || t.contains("застройщик")
+    }
+
     @ViewBuilder
     private var sellerView: some View {
         if let name = apartment.sellerName {
@@ -268,6 +281,16 @@ struct ApartmentDetailView: View {
                         }
                     }
                     Spacer()
+
+                    if isSellerProfessional {
+                        Label("+3 балла", systemImage: "person.badge.plus")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.green.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
                 }
             }
             .padding()
@@ -588,6 +611,7 @@ struct InfoRow: View {
                 locationScore: 20,
                 isDistrictScore: false,
                 areaScore: 5,
+                sellerBonus: 0,
                 priceSqm: 198_675,
                 benchmarkSqm: 265_000,
                 benchmarkOkrug: "ЦАО",

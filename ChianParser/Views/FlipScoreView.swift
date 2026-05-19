@@ -117,6 +117,9 @@ struct FlipScoreCard: View {
                 max: 20
             )
             ScoreRow(label: "Площадь",        icon: "square.dashed", score: result.areaScore,  max: 15)
+            if result.sellerBonus > 0 {
+                ScoreRow(label: "Агент / агентство", icon: "person.badge.plus", score: result.sellerBonus, max: 3)
+            }
         }
     }
 
@@ -223,12 +226,13 @@ struct DemandBadge: View {
 
 #Preview {
     let result = FlipScoreResult(
-        totalScore: 77,
+        totalScore: 80,
         priceScore: 32,
         metroScore: 20,
         locationScore: 20,
         isDistrictScore: false,
         areaScore: 5,
+        sellerBonus: 3,
         priceSqm: 220_000,
         benchmarkSqm: 280_000,
         benchmarkOkrug: "ЦАО",
