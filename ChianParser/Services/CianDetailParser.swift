@@ -13,9 +13,13 @@ final class CianDetailParser {
     /// Парсит JSON из `window.__NEXT_DATA__` (предпочтительный метод) и обновляет объект Apartment.
     /// Вызывается из DetailPageLoader, когда JSON был извлечён напрямую через JS без загрузки полного HTML.
     static func parseDetailJSON(jsonString: String, apartment: Apartment) {
+        let oldViewsTotal = apartment.viewsTotal
+        let oldLastUpdate = apartment.lastUpdate
+        
         let wrappedHTML = "<html><head><script id=\"__NEXT_DATA__\" type=\"application/json\">\(jsonString)</script></head><body></body></html>"
         if tryExtractFromJSON(html: wrappedHTML, apartment: apartment) {
             applyTitleFallback(apartment: apartment)
+            updateViewsSnapshot(apartment: apartment, oldViewsTotal: oldViewsTotal, oldLastUpdate: oldLastUpdate)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
             print("✅ [Detail] \(apartment.id) цена=\(apartment.price) площадь=\(apartment.area.map { String($0) } ?? "?") метро=\(apartment.metro ?? "?")")
@@ -29,6 +33,8 @@ final class CianDetailParser {
     ///   - html: HTML-код страницы объявления
     ///   - apartment: Объект квартиры для обновления
     static func parseDetailPage(html: String, apartment: Apartment) {
+        let oldViewsTotal = apartment.viewsTotal
+        let oldLastUpdate = apartment.lastUpdate
 
         
         // DEBUG: Сохранение HTML для отладки (раскомментируйте при необходимости)
@@ -68,6 +74,7 @@ final class CianDetailParser {
             parseSellerInfo(from: doc, apartment: apartment)
             
             // Отмечаем, что детальный парсинг выполнен
+            updateViewsSnapshot(apartment: apartment, oldViewsTotal: oldViewsTotal, oldLastUpdate: oldLastUpdate)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
             
@@ -289,6 +296,18 @@ final class CianDetailParser {
             let statsNode = (offerNode["stats"] as? [String: Any])
                 ?? (offerData["stats"] as? [String: Any])
             
+            // --- DEBUG: Ищем историю просмотров ---
+            if let stats = statsNode {
+                print("  🔍 DEBUG: Ключи внутри stats: \(stats.keys.joined(separator: ", "))")
+                // Проверим, нет ли внутри массивов (обычно так выглядит история для графика)
+                for (key, value) in stats {
+                    if let array = value as? [Any] {
+                        print("  🔍 DEBUG: Найден массив в stats['\(key)']: \(array)")
+                    }
+                }
+            }
+            // --------------------------------------
+            
             // Вариант А: числа напрямую (расширенный набор ключей)
             if let stats = statsNode {
                 apartment.viewsTotal = extractInt(stats["total"])
@@ -364,6 +383,8 @@ final class CianDetailParser {
                 || saleType.lowercased().contains("auction")
                 || apartment.title.lowercased().contains("аукцион")
                 || (apartment.apartmentDescription?.lowercased().contains("аукцион") ?? false)
+                
+            apartment.isAlternative = saleType.lowercased().contains("alternative")
 
             let descLower = apartment.apartmentDescription?.lowercased() ?? ""
             let depositPhrases = ["залог внесен", "залог внесён", "задаток внесен", "задаток внесён",
@@ -404,6 +425,10 @@ final class CianDetailParser {
                 || titleLower.contains("апартамент")
                 || descLower.contains("апартамент") {
                 apartment.isApartmentsFlag = true
+            }
+            // Доли
+            if category.contains("share") || titleLower.contains("доля") {
+                apartment.isShare = true
             }
 
             // Дата публикации
@@ -496,6 +521,24 @@ final class CianDetailParser {
                 apartment.floor = Int(title[floorRange])
                 apartment.totalFloors = Int(title[totalRange])
             }
+        }
+    }
+    
+    // MARK: - Views Snapshot Helper
+    
+    private static func updateViewsSnapshot(apartment: Apartment, oldViewsTotal: Int?, oldLastUpdate: Date) {
+        if let oldTotal = oldViewsTotal, let newTotal = apartment.viewsTotal, newTotal > oldTotal {
+            let prevDate = apartment.previousViewsDate ?? Date.distantPast
+            // Обновляем снэпшот только если текущему снэпшоту уже больше 20 часов
+            if Date().timeIntervalSince(prevDate) > 20 * 3600 {
+                apartment.previousViewsTotal = oldTotal
+                apartment.previousViewsDate = oldLastUpdate
+                print("  ⏱ Обновлен снэпшот просмотров: \(oldTotal) (зафиксировано от \(oldLastUpdate))")
+            }
+        } else if apartment.previousViewsTotal == nil, let currentTotal = apartment.viewsTotal {
+             // Инициализация при первом успешном парсинге
+             apartment.previousViewsTotal = currentTotal
+             apartment.previousViewsDate = oldLastUpdate
         }
     }
     

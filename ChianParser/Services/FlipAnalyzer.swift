@@ -128,7 +128,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
         let total = priceScore + metroScore + locationScore + areaScore + sellerBonus
 
-        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds)
+        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions)
 
         return FlipScoreResult(
             totalScore: min(total, 100),
@@ -226,18 +226,58 @@ private extension FlipAnalyzer {
         }
     }
 
+    /// Нормализует просмотры для рекламных объявлений (убирает накрутку за счет верхних позиций)
+    private func normalizeViews(_ viewsPerDay: Double, promotionType: String?) -> Double {
+        guard let promo = promotionType?.lowercased() else { return viewsPerDay }
+        
+        switch promo {
+        case "standard":
+            return viewsPerDay / 1.5
+        case "premium", "top3", "highlight":
+            return viewsPerDay / 2.0
+        case "simple", "organic", "":
+            return viewsPerDay
+        default:
+            return viewsPerDay / 1.5 // Базовый штраф для неизвестных видов платного продвижения
+        }
+    }
+
     /// Demand computation from views/day.
-    func computeDemand(apartment: Apartment, thresholds: DemandThresholds) -> (DemandLevel, Double?) {
-        guard let viewsToday = apartment.viewsToday, viewsToday > 0 else {
-            if let total = apartment.viewsTotal, total > 0, let published = apartment.publishedDate {
-                let days = max(1.0, Date().timeIntervalSince(published) / 86400)
-                let perDay = Double(total) / days
-                return (demandLevel(perDay: perDay, thresholds: thresholds), perDay)
+    func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool) -> (DemandLevel, Double?) {
+        var rawPerDay: Double? = nil
+        
+        // 1. Приоритет: честная дельта (rolling window) за последние N часов
+        if let prevTotal = apartment.previousViewsTotal,
+           let prevDate = apartment.previousViewsDate,
+           let currentTotal = apartment.viewsTotal {
+            let hoursPassed = Date().timeIntervalSince(prevDate) / 3600.0
+            if hoursPassed > 12.0 {
+                let deltaViews = currentTotal - prevTotal
+                if deltaViews >= 0 {
+                    rawPerDay = Double(deltaViews) / (hoursPassed / 24.0)
+                }
             }
+        }
+
+        // 2. Фолбэк 1: Просмотры "за сегодня" (от Циана)
+        if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
+            rawPerDay = Double(viewsToday)
+        }
+        
+        // 3. Фолбэк 2: Среднее значение за всё время жизни объявления
+        if rawPerDay == nil, let total = apartment.viewsTotal, total > 0, let published = apartment.publishedDate {
+            let days = max(1.0, Date().timeIntervalSince(published) / 86400)
+            rawPerDay = Double(total) / days
+        }
+        
+        guard let finalRaw = rawPerDay else {
             return (.noData, nil)
         }
-        let perDay = Double(viewsToday)
-        return (demandLevel(perDay: perDay, thresholds: thresholds), perDay)
+        
+        // Нормализуем просмотры, если есть платное продвижение и включены санкции
+        let normalizedPerDay = penalizePromotions ? normalizeViews(finalRaw, promotionType: apartment.promotionType) : finalRaw
+        
+        return (demandLevel(perDay: normalizedPerDay, thresholds: thresholds), normalizedPerDay)
     }
 
     /// Seller bonus: +3 for agent/agency, 0 for owner or unknown.

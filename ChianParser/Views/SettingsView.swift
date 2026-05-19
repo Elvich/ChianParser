@@ -418,8 +418,7 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = false
     @AppStorage("hideStudios")            private var hideStudios: Bool = false
     @AppStorage("hideApartments")         private var hideApartments: Bool = false
-    @AppStorage("hideTopPromotion")       private var hideTopPromotion: Bool = false
-    @AppStorage("hideStandardPromotion")  private var hideStandardPromotion: Bool = false
+    @AppStorage("penalizePromotions")     private var penalizePromotions: Bool = true
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -448,9 +447,8 @@ private struct ParserSettingsTab: View {
                 Toggle("Только с детальным парсингом", isOn: $requireDetailParsed)
                 Toggle("Скрывать студии", isOn: $hideStudios)
                 Toggle("Скрывать апартаменты", isOn: $hideApartments)
-                Toggle("Скрывать Топ / Премиум (платное продвижение)", isOn: $hideTopPromotion)
-                Toggle("Скрывать Стандарт тоже", isOn: $hideStandardPromotion)
-                    .disabled(!hideTopPromotion)
+                Toggle("Пессимизировать просмотры у рекламы", isOn: $penalizePromotions)
+                    .help("Делит просмотры на 1.5 для Стандарта и на 2.0 для Премиум/Топ-3 объявлений, чтобы нивелировать накрутку просмотров.")
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")
@@ -464,7 +462,7 @@ private struct ParserSettingsTab: View {
             } header: {
                 Text("Детальный парсинг")
             } footer: {
-                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных.\nСтудии и апартаменты определяются по заголовку, описанию и JSON-полям категории.\nПлатное продвижение — Топ/Премиум скрывает объявления с покупными просмотрами из-за рекламы; Стандарт — наименее агрессивный вариант.")
+                Text("Авто-детали — парсить каждую новую квартиру сразу после находки.\nАвто-проверка — перепроверять квартиры, которые не появлялись в поиске дольше порога.\nТолько с детальным парсингом — скрывать квартиры без детальных данных.\nСтудии и апартаменты определяются по заголовку, описанию и JSON-полям категории.")
             }
 
             Section {

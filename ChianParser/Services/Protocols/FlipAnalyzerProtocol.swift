@@ -44,6 +44,9 @@ struct BenchmarkContext {
     /// Mode for calculating price benchmark.
     let benchmarkMode: BenchmarkMode
 
+    /// When true, promoted apartments have their view counts penalized.
+    let penalizePromotions: Bool
+
     init(
         byOkrug: [String: OkrugBenchmark],
         byDistrict: [String: OkrugBenchmark] = [:],
@@ -52,7 +55,8 @@ struct BenchmarkContext {
         globalSampleSize: Int,
         districtScores: [String: Int] = [:],
         useDistrictScore: Bool = false,
-        benchmarkMode: BenchmarkMode = .okrug
+        benchmarkMode: BenchmarkMode = .okrug,
+        penalizePromotions: Bool = true
     ) {
         self.byOkrug = byOkrug
         self.byDistrict = byDistrict
@@ -62,6 +66,7 @@ struct BenchmarkContext {
         self.districtScores = districtScores
         self.useDistrictScore = useDistrictScore
         self.benchmarkMode = benchmarkMode
+        self.penalizePromotions = penalizePromotions
     }
 
     static let empty = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)

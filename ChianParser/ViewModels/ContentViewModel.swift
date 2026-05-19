@@ -108,11 +108,8 @@ final class ContentViewModel {
     /// When enabled, апартаменты (isApartments == true) are excluded from the scored list.
     var hideApartments: Bool = false
 
-    /// When enabled, listings with paid Top/Premium promotion are hidden.
-    var hideTopPromotion: Bool = false
-
-    /// When enabled, listings with paid Standard promotion are also hidden (in addition to hideTopPromotion).
-    var hideStandardPromotion: Bool = false
+    /// When enabled, promoted listings have their score penalized.
+    var penalizePromotions: Bool = true
 
     /// Maximum metro distance in minutes (0 = no limit). Apartments exceeding this are hidden.
     var maxMetroDistance: Int = 0
@@ -229,7 +226,8 @@ final class ContentViewModel {
             globalSampleSize: base.globalSampleSize,
             districtScores: districtScores,
             useDistrictScore: useDistrictScore,
-            benchmarkMode: benchmarkMode
+            benchmarkMode: benchmarkMode,
+            penalizePromotions: penalizePromotions
         )
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
@@ -264,12 +262,6 @@ final class ContentViewModel {
             // Skip studios and апартаменты when their respective hide flags are active
             if hideStudios && apt.isStudio { return nil }
             if hideApartments && apt.isApartments { return nil }
-            // Skip promoted listings based on user preference
-            if hideTopPromotion && apt.isPaidPromotion {
-                // "standard" promotion is only hidden if hideStandardPromotion is also on
-                let isStandardOnly = apt.promotionType == "standard"
-                if !isStandardOnly || hideStandardPromotion { return nil }
-            }
             // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
             if apt.isAuction && !showAuctions { return nil }
             if apt.isDepositPaid && !showDeposits { return nil }

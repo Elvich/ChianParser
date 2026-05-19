@@ -62,8 +62,7 @@ struct ContentBody: View {
     @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
     @AppStorage("hideStudios")             private var hideStudios: Bool = false
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
-    @AppStorage("hideTopPromotion")        private var hideTopPromotion: Bool = false
-    @AppStorage("hideStandardPromotion")   private var hideStandardPromotion: Bool = false
+    @AppStorage("penalizePromotions")      private var penalizePromotions: Bool = true
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
     @AppStorage("minBuildingFloors")       private var minBuildingFloors: Int = 6
@@ -111,12 +110,8 @@ struct ContentBody: View {
                 viewModel.hideApartments = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
-            .onChange(of: hideTopPromotion) { _, v in
-                viewModel.hideTopPromotion = v
-                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-            }
-            .onChange(of: hideStandardPromotion) { _, v in
-                viewModel.hideStandardPromotion = v
+            .onChange(of: penalizePromotions) { _, v in
+                viewModel.penalizePromotions = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: maxMetroDistance) { _, v in
@@ -249,8 +244,7 @@ struct ContentBody: View {
         viewModel.requireDetailParsed  = requireDetailParsed
         viewModel.hideStudios          = hideStudios
         viewModel.hideApartments       = hideApartments
-        viewModel.hideTopPromotion     = hideTopPromotion
-        viewModel.hideStandardPromotion = hideStandardPromotion
+        viewModel.penalizePromotions   = penalizePromotions
         viewModel.maxMetroDistance     = maxMetroDistance
         viewModel.metroWalkOnly        = metroWalkOnly
         viewModel.minBuildingFloors    = minBuildingFloors

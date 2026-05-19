@@ -53,12 +53,18 @@ final class Apartment {
     var viewsTotal: Int?        // Просмотров всего
     var publishedDate: Date?    // Дата публикации объявления
     
+    // Снэпшот для вычисления честного спроса за день (Дельта)
+    var previousViewsTotal: Int?
+    var previousViewsDate: Date?
+    
     // Флаг детального парсинга
     var isDetailedParsed: Bool = false // Был ли выполнен детальный парсинг
 
     // Авто-детекция особых условий (устанавливается парсером)
     var isAuction: Bool = false      // Объявление является аукционом
     var isDepositPaid: Bool = false  // В описании упоминается внесённый залог/задаток
+    var isAlternative: Bool = false  // Альтернативная продажа (не свободная)
+    var isShare: Bool = false        // Продажа доли в квартире
 
     // Платное продвижение на Циан (Топ, Премиум, Стандарт)
     var isPaidPromotion: Bool = false  // Есть платное продвижение (top3/premium/standard)

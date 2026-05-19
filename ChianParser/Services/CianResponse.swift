@@ -83,6 +83,20 @@ final class CianDataExtractor {
                 ?? "Квартира \(id)"
 
             let bargainTerms = item["bargainTerms"] as? [String: Any]
+            
+            // Фильтрация: пропускаем доли и альтернативу
+            let saleType = (bargainTerms?["saleType"] as? String) ?? (item["saleType"] as? String) ?? ""
+            let category = (item["category"] as? String)?.lowercased() ?? ""
+            
+            if saleType.lowercased() == "alternative" {
+                print("  ⏭️ Пропускаем \(id) (Альтернативная продажа)")
+                continue
+            }
+            if category.contains("share") || title.lowercased().contains("доля") {
+                print("  ⏭️ Пропускаем \(id) (Доля в квартире)")
+                continue
+            }
+
             let price = extractInt(bargainTerms?["price"])
                 ?? extractInt(bargainTerms?["priceTotal"])
                 ?? 0
@@ -222,6 +236,20 @@ final class CianDataExtractor {
                 ?? "Квартира \(id)"
 
             let bargainTerms = item["bargainTerms"] as? [String: Any]
+            
+            // Фильтрация: пропускаем доли и альтернативу
+            let saleType = (bargainTerms?["saleType"] as? String) ?? (item["saleType"] as? String) ?? ""
+            let category = (item["category"] as? String)?.lowercased() ?? ""
+            
+            if saleType.lowercased() == "alternative" {
+                print("  ⏭️ Пропускаем \(id) (Альтернативная продажа)")
+                continue
+            }
+            if category.contains("share") || title.lowercased().contains("доля") {
+                print("  ⏭️ Пропускаем \(id) (Доля в квартире)")
+                continue
+            }
+
             let price = extractInt(bargainTerms?["price"])
                 ?? extractInt(bargainTerms?["priceTotal"])
                 ?? 0
@@ -339,6 +367,13 @@ final class CianDataExtractor {
 
                 let price = cleanPrice(priceText)
                 let address = geoLabels.joined(separator: ", ")
+
+                // Фильтрация в HTML (базовая)
+                let lowerTitle = title.lowercased()
+                if lowerTitle.contains("доля") {
+                    print("  ⏭️ Пропускаем \(id) (Доля - из HTML)")
+                    continue
+                }
 
                 let apartment = Apartment(
                     id: id,
