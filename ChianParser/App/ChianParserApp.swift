@@ -7,10 +7,23 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct ChianParserApp: App {
     let container = AppContainer()
+
+    init() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if granted {
+                print("✅ Notification permission granted.")
+            } else if let error = error {
+                print("❌ Notification permission error: \(error.localizedDescription)")
+            } else {
+                print("⚠️ Notification permission denied.")
+            }
+        }
+    }
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([

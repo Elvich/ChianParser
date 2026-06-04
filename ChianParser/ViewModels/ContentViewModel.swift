@@ -68,7 +68,7 @@ final class ContentViewModel {
     // MARK: - Dependencies
 
     private let modelContext: ModelContext
-    private let searchParser: any SearchParserProtocol
+    private let parserActor: ParserActor
     private let exportService: any ExportServiceProtocol
     private let flipAnalyzer: any FlipAnalyzerProtocol
     let detailLoader: DetailPageLoader
@@ -90,8 +90,8 @@ final class ContentViewModel {
     var showClearDataConfirmation: Bool = false
     var sortOrder: SortOrder = .flipScore
 
-    /// Statuses shown in the list. Defaults to everything except .ban.
-    var activeStatusFilters: Set<ApartmentStatus> = ApartmentStatus.defaultVisible
+    /// Filter coordinator encapsulating all active filters and flags.
+    var filterCoordinator = FilterCoordinator()
 
     /// When enabled, newly found apartments are automatically queued for detail parsing.
     var autoDetailParsing: Bool = false
@@ -99,17 +99,14 @@ final class ContentViewModel {
     /// When enabled, re-checks stale apartments for removal/price changes when the detail queue drains.
     var autoCheckActivity: Bool = false
 
-    /// When enabled, apartments without detail parsing are excluded from the scored list.
-    var requireDetailParsed: Bool = false
-
-    /// When enabled, studios (isStudio == true) are excluded from the scored list.
-    var hideStudios: Bool = false
-
-    /// When enabled, апартаменты (isApartments == true) are excluded from the scored list.
-    var hideApartments: Bool = false
-
     /// When enabled, promoted listings have their score penalized.
     var penalizePromotions: Bool = true
+
+    /// When enabled, normalizes views for morning parsing according to a non-linear distribution curve.
+    var extrapolateMorningViews: Bool = true
+
+    /// When true, Metro score (0-25) is replaced with a Views score based on demand level.
+    var useViewsScoreInsteadOfMetro: Bool = false
 
     /// When enabled, uses the liquidity-optimized bell curve for Area scoring.
     var useLiquidityAreaScore: Bool = false
@@ -117,17 +114,10 @@ final class ContentViewModel {
     /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
     var targetPercentile: Double = 0.5
 
-    /// Maximum metro distance in minutes (0 = no limit). Apartments exceeding this are hidden.
-    var maxMetroDistance: Int = 0
-
-    /// When enabled, only walk-accessible metro is accepted (metroTransportType == "walk").
-    var metroWalkOnly: Bool = false
-
-    /// Minimum number of floors in the building (0 = no limit). Buildings below this are hidden.
-    var minBuildingFloors: Int = 0
-
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
+    var moderateReparseHours: Int = 12
+    var autoCheckStale: Bool = true
 
     /// Prevents immediate re-loop: true while a stale-check batch is in progress.
     private var staleCheckInProgress = false
@@ -139,21 +129,8 @@ final class ContentViewModel {
     /// Current parsing mode — synced from AppStorage via ContentView.
     var parsingMode: ParsingMode = .parallel
 
-    /// When true, auto-detected auction listings are shown. Off by default.
-    var showAuctions: Bool = false
-
-    /// When true, listings with deposit-paid phrases in description are shown. Off by default.
-    var showDeposits: Bool = false
-
-    /// Окружа currently shown. Empty = show all.
-    var activeOkrugFilters: Set<String> = []
-
     /// Sorted list of all okrugs present in the current apartment dataset.
     private(set) var availableOkrugs: [String] = []
-
-    /// Room count buckets currently shown. Empty = show all.
-    /// 0 = Студия, 1 = 1К, 2 = 2К, 3 = 3К, 4 = 4К+ (≥4 комнат).
-    var activeRoomFilters: Set<Int> = []
 
     /// Sorted list of room count buckets present in the dataset (0…4).
     private(set) var availableRoomCounts: [Int] = []
@@ -173,9 +150,6 @@ final class ContentViewModel {
     /// Mode for calculating price benchmark.
     var benchmarkMode: BenchmarkMode = .okrug
 
-    /// Districts currently shown. Empty = show all (only active when useDistrictScore is true).
-    var activeDistrictFilters: Set<String> = []
-
     /// Districts available for the filter bar, sorted by score descending.
     private(set) var availableDistricts: [String] = []
 
@@ -183,13 +157,13 @@ final class ContentViewModel {
 
     init(
         modelContext: ModelContext,
-        searchParser: any SearchParserProtocol,
+        parserActor: ParserActor,
         exportService: any ExportServiceProtocol,
         flipAnalyzer: any FlipAnalyzerProtocol,
         detailLoader: DetailPageLoader
     ) {
         self.modelContext = modelContext
-        self.searchParser = searchParser
+        self.parserActor = parserActor
         self.exportService = exportService
         self.flipAnalyzer = flipAnalyzer
         self.detailLoader = detailLoader
@@ -234,7 +208,9 @@ final class ContentViewModel {
             useDistrictScore: useDistrictScore,
             benchmarkMode: benchmarkMode,
             penalizePromotions: penalizePromotions,
+            extrapolateMorningViews: extrapolateMorningViews,
             useLiquidityAreaScore: useLiquidityAreaScore,
+            useViewsScoreInsteadOfMetro: useViewsScoreInsteadOfMetro,
             targetPercentile: targetPercentile
         )
 
@@ -264,45 +240,12 @@ final class ContentViewModel {
 
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
-            guard activeStatusFilters.contains(apt.status) else { return nil }
-            // Skip apartments without detail parsing when that filter is active
-            if requireDetailParsed && !apt.isDetailedParsed { return nil }
-            // Skip studios and апартаменты when their respective hide flags are active
-            if hideStudios && apt.isStudio { return nil }
-            if hideApartments && apt.isApartments { return nil }
-            // Skip auto-detected auctions and deposit-paid listings unless explicitly shown
-            if apt.isAuction && !showAuctions { return nil }
-            if apt.isDepositPaid && !showDeposits { return nil }
-            // Skip apartments whose nearest metro is in the banlist
-            if let metro = apt.metro, metroBanlist.contains(metro) { return nil }
-            // Skip apartments in low-rise buildings (0 = no limit; unknown totalFloors passes through)
-            if minBuildingFloors > 0, let floors = apt.totalFloors, floors < minBuildingFloors { return nil }
-            // Skip apartments that exceed the max metro distance (0 = no limit)
-            if maxMetroDistance > 0, let dist = apt.metroDistance, dist > maxMetroDistance { return nil }
-            // Skip apartments reachable only by transport when walk-only mode is on
-            if metroWalkOnly, apt.metroTransportType == "transport" { return nil }
-            // District ban — score -1 means always hide (district or okrug level)
-            if let district = apt.district, (districtScores[district] ?? 0) < 0 { return nil }
-            if let okrug = apt.okrug, (districtScores[okrug] ?? 0) < 0 { return nil }
-            // Skip apartments not in the active okrug filter (empty set = show all)
-            if !activeOkrugFilters.isEmpty {
-                guard let okrug = apt.okrug, activeOkrugFilters.contains(okrug) else { return nil }
-            }
-            // Skip apartments not matching the active room filter (empty = show all).
-            if !activeRoomFilters.isEmpty {
-                // If studio bucket (0) not selected, also exclude by isStudio flag —
-                // catches studios whose roomsCount is nil or incorrectly set.
-                if !activeRoomFilters.contains(0) && apt.isStudio { return nil }
-                // For known roomsCount: apply bucket matching.
-                // Apartments with nil roomsCount pass through (type unknown).
-                if let rooms = apt.roomsCount {
-                    guard activeRoomFilters.contains(min(rooms, 4)) else { return nil }
-                }
-            }
-            // District filter — only active when district mode is on
-            if useDistrictScore && !activeDistrictFilters.isEmpty {
-                guard let district = apt.district, activeDistrictFilters.contains(district) else { return nil }
-            }
+            guard filterCoordinator.shouldKeep(
+                apartment: apt,
+                metroBanlist: metroBanlist,
+                districtScores: districtScores,
+                useDistrictScore: useDistrictScore
+            ) else { return nil }
             return (apt, flipAnalyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds))
         }
 
@@ -334,41 +277,7 @@ final class ContentViewModel {
         cachedScores = sorted
     }
 
-    /// Toggle a status in the active filter set.
-    func toggleStatusFilter(_ status: ApartmentStatus) {
-        if activeStatusFilters.contains(status) {
-            activeStatusFilters.remove(status)
-        } else {
-            activeStatusFilters.insert(status)
-        }
-    }
-
-    /// Toggle an okrug in the active okrug filter set.
-    func toggleOkrugFilter(_ okrug: String) {
-        if activeOkrugFilters.contains(okrug) {
-            activeOkrugFilters.remove(okrug)
-        } else {
-            activeOkrugFilters.insert(okrug)
-        }
-    }
-
-    /// Toggle a district in the active district filter set.
-    func toggleDistrictFilter(_ district: String) {
-        if activeDistrictFilters.contains(district) {
-            activeDistrictFilters.remove(district)
-        } else {
-            activeDistrictFilters.insert(district)
-        }
-    }
-
-    /// Toggle a room count bucket in the active room filter set.
-    func toggleRoomFilter(_ bucket: Int) {
-        if activeRoomFilters.contains(bucket) {
-            activeRoomFilters.remove(bucket)
-        } else {
-            activeRoomFilters.insert(bucket)
-        }
-    }
+    // FilterCoordinator handles toggle actions directly.
 
     // MARK: - URL Lookup
 
@@ -492,98 +401,42 @@ final class ContentViewModel {
 
         log = "🔍 Анализ данных (JSON → HTML fallback)..."
 
-        let foundApartments = searchParser.extractData(from: receivedString)
-
-        if !foundApartments.isEmpty {
-            var newCount = 0
-            var updatedCount = 0
-            var newlyInserted: [Apartment] = []
-
-            for apartment in foundApartments {
-                let id = apartment.id
-                let fetchDescriptor = FetchDescriptor<Apartment>(predicate: #Predicate { $0.id == id })
-
-                if let existing = try? modelContext.fetch(fetchDescriptor).first {
-                    if updateExistingApartment(existing, with: apartment) {
-                        updatedCount += 1
-                    }
-                    // Populate okrug/district for apartments parsed before these fields existed
-                    if existing.okrug == nil {
-                        existing.okrug = flipAnalyzer.extractOkrug(from: existing.address)
-                    }
-                    if existing.district == nil {
-                        existing.district = flipAnalyzer.extractDistrict(from: existing.address)
-                    }
-                } else if apartment.price > 0 {
-                    // Don't insert apartments with price = 0 — parser failure, not a real listing
-                    apartment.okrug = flipAnalyzer.extractOkrug(from: apartment.address)
-                    apartment.district = flipAnalyzer.extractDistrict(from: apartment.address)
-                    modelContext.insert(apartment)
-                    newlyInserted.append(apartment)
-                    newCount += 1
-                }
-            }
-
-            log = "✅ Успешно! Новых: \(newCount) | Обновлено: \(updatedCount) | Всего на странице: \(foundApartments.count)"
-
-            // Auto-enqueue new apartments for detail parsing if enabled
-            if autoDetailParsing && !newlyInserted.isEmpty {
-                detailLoader.enqueue(newlyInserted)
-                // In sequential mode: wait for this batch to finish before moving to next URL
-                if parsingMode == .sequential {
-                    pendingPageCompletion = true
-                    log += " — ожидаю детального парсинга..."
+        Task {
+            do {
+                let result = try await parserActor.parseAndSaveSearchPage(receivedString, targetPercentile: targetPercentile)
+                
+                guard result.totalCount > 0 else {
+                    log = "⚠️ Квартиры не найдены. Возможно, блокировка или капча."
                     return
                 }
+
+                log = "✅ Успешно! Новых: \(result.newCount) | Обновлено: \(result.updatedCount) | Всего на странице: \(result.totalCount)"
+
+                if !result.newlyInsertedIDs.isEmpty {
+                    var newlyInserted: [Apartment] = []
+                    for id in result.newlyInsertedIDs {
+                        if let apt = try? modelContext.model(for: id) as? Apartment {
+                            newlyInserted.append(apt)
+                        }
+                    }
+
+                    // Auto-enqueue new apartments for detail parsing if enabled
+                    if autoDetailParsing && !newlyInserted.isEmpty {
+                        detailLoader.enqueue(newlyInserted)
+                        // In sequential mode: wait for this batch to finish before moving to next URL
+                        if parsingMode == .sequential {
+                            pendingPageCompletion = true
+                            log += " — ожидаю детального парсинга..."
+                            return
+                        }
+                    }
+                }
+
+                onPageCompleted()
+            } catch {
+                log = "❌ Ошибка при фоновом сохранении: \(error.localizedDescription)"
             }
-
-            onPageCompleted()
-        } else {
-            log = "⚠️ Квартиры не найдены. Возможно, блокировка или капча."
         }
-    }
-
-    @discardableResult
-    private func updateExistingApartment(_ existing: Apartment, with new: Apartment) -> Bool {
-        var hasChanges = false
-
-        // Always mark as seen in this search run
-        existing.lastSeenInSearch = Date()
-
-        // Only update price if the new value is valid (> 0).
-        // HTML fallback parsers often return price = 0 when they can't extract the price —
-        // we must never overwrite a real price with a parser failure.
-        if new.price > 0 && existing.price != new.price {
-            existing.price = new.price
-            existing.priceHistory.append(PricePoint(price: new.price, date: Date()))
-            // Price changed — detail data may be stale, allow re-parsing
-            existing.isDetailedParsed = false
-            hasChanges = true
-            print("💰 Цена изменилась для квартиры \(existing.id): \(existing.price) → \(new.price)")
-        }
-
-        if existing.title != new.title { existing.title = new.title; hasChanges = true }
-        if existing.address != new.address { existing.address = new.address; hasChanges = true }
-        if existing.area != new.area { existing.area = new.area; hasChanges = true }
-        if existing.floor != new.floor { existing.floor = new.floor; hasChanges = true }
-        if existing.totalFloors != new.totalFloors { existing.totalFloors = new.totalFloors; hasChanges = true }
-        if existing.houseMaterial != new.houseMaterial { existing.houseMaterial = new.houseMaterial; hasChanges = true }
-        if existing.metro != new.metro { existing.metro = new.metro; hasChanges = true }
-        if existing.metroDistance != new.metroDistance { existing.metroDistance = new.metroDistance; hasChanges = true }
-        if existing.metroTransportType != new.metroTransportType { existing.metroTransportType = new.metroTransportType; hasChanges = true }
-        // viewsToday / viewsTotal приходят только из детального парсинга.
-        // Поисковый парсер их не заполняет (new.viewsToday == nil) —
-        // поэтому перезаписываем только если новое значение реально есть.
-        if let newViews = new.viewsToday, existing.viewsToday != newViews {
-            existing.viewsToday = newViews; hasChanges = true
-        }
-        if let newTotal = new.viewsTotal, existing.viewsTotal != newTotal {
-            existing.viewsTotal = newTotal; hasChanges = true
-        }
-
-        if hasChanges { existing.lastUpdate = Date() }
-
-        return hasChanges
     }
 
     // MARK: - Captcha Handling
@@ -622,11 +475,39 @@ final class ContentViewModel {
         }
         guard !stale.isEmpty else {
             log = "✅ Нет устаревших квартир (порог: \(staleDaysThreshold) дн.)"
+            checkModerateApartments(from: apartments)
             return
         }
         log = "🔍 Проверяю активность \(stale.count) кв. (не видели > \(staleDaysThreshold) дн.)..."
         staleCheckInProgress = true
         detailLoader.loadDetailPages(for: stale)
+    }
+
+    private var moderateCheckInProgress = false
+
+    func checkModerateApartments(from apartments: [Apartment]) {
+        let cutoff = Calendar.current.date(byAdding: .hour, value: -moderateReparseHours, to: Date()) ?? Date()
+        
+        let candidates = apartments.filter { apt in
+            apt.status != .ban && apt.status != .deal && apt.lastUpdate < cutoff
+        }
+        
+        let moderate = candidates.filter { apt in
+            if let score = cachedScores[apt.id] {
+                // Перепарсиваем moderate и market (так как они близки к топу)
+                return score.demandLevel == .moderate || score.demandLevel == .market
+            }
+            return false
+        }
+        
+        guard !moderate.isEmpty else {
+            log = "✅ Нет 'умеренных' квартир для обновления (порог: \(moderateReparseHours) ч.)"
+            return
+        }
+        
+        log = "🔍 Обновляю \(moderate.count) 'умеренных' квартир (не обновлялись > \(moderateReparseHours) ч.)..."
+        moderateCheckInProgress = true
+        detailLoader.loadDetailPages(for: moderate)
     }
 
     private func onDetailParsingComplete() {
@@ -636,6 +517,7 @@ final class ContentViewModel {
         } catch {
             log = "❌ Ошибка сохранения: \(error.localizedDescription)"
             staleCheckInProgress = false
+            moderateCheckInProgress = false
             pendingPageCompletion = false
             return
         }
@@ -648,11 +530,18 @@ final class ContentViewModel {
             return
         }
 
-        // If we just finished a stale check — don't immediately re-trigger.
-        // If autoCheckActivity is on and this was a regular parsing batch — run stale check next.
+        // If we just finished a stale check — run moderate check next.
         if staleCheckInProgress {
             staleCheckInProgress = false
             log = "✅ Проверка активности завершена"
+            
+            let descriptor = FetchDescriptor<Apartment>()
+            if let all = try? modelContext.fetch(descriptor) {
+                checkModerateApartments(from: all)
+            }
+        } else if moderateCheckInProgress {
+            moderateCheckInProgress = false
+            log = "✅ Обновление умеренных квартир завершено"
         } else if autoCheckActivity {
             log = "✅ Детальный парсинг завершён — запускаю проверку активности..."
             let descriptor = FetchDescriptor<Apartment>()

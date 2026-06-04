@@ -13,6 +13,7 @@ final class AppContainer {
 
     // MARK: - Services
 
+    let selectorsManager: any SelectorsManagerProtocol
     let searchParser: any SearchParserProtocol
     let detailParser: any DetailParserProtocol
     let exportService: any ExportServiceProtocol
@@ -21,13 +22,13 @@ final class AppContainer {
     // MARK: - Init
 
     init(
-        searchParser: any SearchParserProtocol = CianDataExtractor(),
-        detailParser: any DetailParserProtocol = CianDetailParser(),
+        selectorsManager: any SelectorsManagerProtocol = SelectorsManager(),
         exportService: any ExportServiceProtocol = ExportManager(),
         flipAnalyzer: any FlipAnalyzerProtocol = FlipAnalyzer()
     ) {
-        self.searchParser = searchParser
-        self.detailParser = detailParser
+        self.selectorsManager = selectorsManager
+        self.searchParser = CianDataExtractor(selectorsManager: selectorsManager)
+        self.detailParser = CianDetailParser(selectorsManager: selectorsManager)
         self.exportService = exportService
         self.flipAnalyzer = flipAnalyzer
     }
@@ -36,9 +37,10 @@ final class AppContainer {
 
     @MainActor
     func makeContentViewModel(modelContext: ModelContext) -> ContentViewModel {
-        ContentViewModel(
+        let parserActor = ParserActor(modelContainer: modelContext.container, selectorsManager: selectorsManager)
+        return ContentViewModel(
             modelContext: modelContext,
-            searchParser: searchParser,
+            parserActor: parserActor,
             exportService: exportService,
             flipAnalyzer: flipAnalyzer,
             detailLoader: makeDetailPageLoader()

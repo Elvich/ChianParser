@@ -13,13 +13,13 @@
 
 import Foundation
 
-final class FlipAnalyzer {}
+final class FlipAnalyzer: @unchecked Sendable {}
 
 // MARK: - FlipAnalyzerProtocol
 
 extension FlipAnalyzer: FlipAnalyzerProtocol {
 
-    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext {
+    nonisolated func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext {
         var okrugGroups: [String: [Double]] = [:]
         var districtGroups: [String: [Double]] = [:]
         var metroGroups: [String: [Double]] = [:]
@@ -79,7 +79,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         )
     }
 
-    func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult {
+    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult {
         let priceSqm: Double? = {
             guard let area = apartment.area, area > 10, apartment.price > 0 else { return nil }
             return Double(apartment.price) / area
@@ -121,14 +121,26 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         }
 
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm)
-        let metroScore = computeMetroScore(apartment: apartment)
+        
+        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions)
+        
+        let metroScore: Int
+        if benchmark.useViewsScoreInsteadOfMetro {
+            switch demandLevel {
+            case .hot:      metroScore = 25
+            case .market:   metroScore = 15
+            case .moderate: metroScore = 5
+            default:        metroScore = 0
+            }
+        } else {
+            metroScore = computeMetroScore(apartment: apartment)
+        }
+        
         let (locationScore, isDistrictScore) = computeLocationScore(apartment: apartment, benchmark: benchmark)
         let areaScore  = computeAreaScore(apartment: apartment, benchmark: benchmark)
         let sellerBonus = computeSellerBonus(apartment: apartment)
 
         let total = priceScore + metroScore + locationScore + areaScore + sellerBonus
-
-        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions)
 
         return FlipScoreResult(
             totalScore: min(total, 100),
@@ -154,7 +166,7 @@ private extension FlipAnalyzer {
 
     /// Price score: max 40 pts.
     /// Discount bands: ≥25% off → 40, ≥15% → 32, ≥10% → 24, ≥5% → 16, 0% → 8, premium → 0.
-    func computePriceScore(priceSqm: Double?, benchmarkSqm: Double?) -> Int {
+    nonisolated func computePriceScore(priceSqm: Double?, benchmarkSqm: Double?) -> Int {
         guard let priceSqm, let benchmarkSqm, benchmarkSqm > 0 else { return 6 }
         let discount = (benchmarkSqm - priceSqm) / benchmarkSqm
         switch discount {
@@ -170,7 +182,7 @@ private extension FlipAnalyzer {
     /// Metro score: max 25 pts.
     /// Walk ≤5 min → 25, walk ≤10 → 20, walk ≤15 → 15, walk ≤20 → 10,
     /// transport ≤10 → 13, transport ≤20 → 8, no data → 0.
-    func computeMetroScore(apartment: Apartment) -> Int {
+    nonisolated func computeMetroScore(apartment: Apartment) -> Int {
         guard let distance = apartment.metroDistance, distance > 0 else { return 0 }
         let isWalk = apartment.metroTransportType == "walk"
         if isWalk {
@@ -193,7 +205,7 @@ private extension FlipAnalyzer {
     /// Location score: max 20 pts.
     /// District mode ON  — reads score directly from benchmark.districtScores (0…20), neutral 7 if unknown.
     /// District mode OFF — floor position (1st floor → 0, last → 5, near-last → 13, other → 20).
-    func computeLocationScore(apartment: Apartment, benchmark: BenchmarkContext) -> (score: Int, isDistrict: Bool) {
+    nonisolated func computeLocationScore(apartment: Apartment, benchmark: BenchmarkContext) -> (score: Int, isDistrict: Bool) {
         guard benchmark.useDistrictScore else {
             return (computeFloorScore(apartment: apartment), false)
         }
@@ -207,10 +219,10 @@ private extension FlipAnalyzer {
     }
 
     /// Floor score (used in default mode): max 20 pts.
-    func computeFloorScore(apartment: Apartment) -> Int {
+    nonisolated func computeFloorScore(apartment: Apartment) -> Int {
         guard let floor = apartment.floor, let total = apartment.totalFloors, total > 0 else { return 7 }
         if floor == 1         { return 0 }
-        if floor == total     { return 5 }
+        if floor == total     { return 2 } // Pessimize top floor strongly
         if floor == total - 1 { return 13 }
         return 20
     }
@@ -218,33 +230,43 @@ private extension FlipAnalyzer {
     /// Area score: max 15 pts.
     /// Liquidity mode (bell curve): 35-50 → 15, 25-35 → 11, 51-70 → 6, else → 2.
     /// Default mode (linear): ≥60 → 15, ≥45 → 11, ≥30 → 6, <30 → 2.
-    func computeAreaScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
+    nonisolated func computeAreaScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
         guard let area = apartment.area else { return 0 }
+        
+        var score = 0
         if benchmark.useLiquidityAreaScore {
             switch area {
-            case 35.0...50.0: return 15
-            case 25.0..<35.0: return 11
-            case 50.0...70.0: return 6
-            default:          return 2
+            case 35.0...50.0: score = 15
+            case 25.0..<35.0: score = 11
+            case 50.0...70.0: score = 6
+            default:          score = 2
             }
         } else {
             switch area {
-            case 60...: return 15
-            case 45...: return 11
-            case 30...: return 6
-            default:    return 2
+            case 60...: score = 15
+            case 45...: score = 11
+            case 30...: score = 6
+            default:    score = 2
             }
         }
+        
+        // Double rooms bonus (most marginable for flipping)
+        if apartment.roomsCount == 2 {
+            score = min(15, score + 4)
+        }
+        return score
     }
 
     /// Нормализует просмотры для рекламных объявлений (убирает накрутку за счет верхних позиций)
-    private func normalizeViews(_ viewsPerDay: Double, promotionType: String?) -> Double {
+    nonisolated func normalizeViews(_ viewsPerDay: Double, promotionType: String?) -> Double {
         guard let promo = promotionType?.lowercased() else { return viewsPerDay }
         
         switch promo {
         case "standard":
             return viewsPerDay / 1.5
-        case "premium", "top3", "highlight":
+        case "top3":
+            return viewsPerDay / 3.0
+        case "premium", "highlight":
             return viewsPerDay / 2.0
         case "simple", "organic", "":
             return viewsPerDay
@@ -254,7 +276,7 @@ private extension FlipAnalyzer {
     }
 
     /// Demand computation from views/day.
-    func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool) -> (DemandLevel, Double?) {
+    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool) -> (DemandLevel, Double?) {
         var rawPerDay: Double? = nil
         
         // 1. Приоритет: честная дельта (rolling window) за последние N часов
@@ -272,7 +294,27 @@ private extension FlipAnalyzer {
 
         // 2. Фолбэк 1: Просмотры "за сегодня" (от Циана)
         if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
-            rawPerDay = Double(viewsToday)
+            if benchmark.extrapolateMorningViews {
+                let hour = Calendar.current.component(.hour, from: Date())
+                
+                // Cumulative percentage of daily views by hour (approximate curve)
+                // 0: 0%, 4: 3%, 8: 10%, 12: 38%, 16: 66%, 20: 90%, 24: 100%
+                let distribution: [Double] = [
+                    0.0, 0.01, 0.02, 0.02, 0.03, 0.03, 0.04, 0.06, 0.10, 0.15, 0.22, 0.30, 0.38,
+                    0.45, 0.52, 0.59, 0.66, 0.73, 0.79, 0.85, 0.90, 0.94, 0.97, 0.99, 1.0
+                ]
+                
+                let h = max(0, min(24, hour))
+                let percentage = distribution[h]
+                
+                // Если процент слишком мал (до 8 утра), лучше пропустить этот шаг 
+                // и перейти к Фолбэку 2 (среднее за все время), чтобы избежать ошибок экстраполяции
+                if percentage >= 0.10 {
+                    rawPerDay = Double(viewsToday) / percentage
+                }
+            } else {
+                rawPerDay = Double(viewsToday)
+            }
         }
         
         // 3. Фолбэк 2: Среднее значение за всё время жизни объявления
@@ -296,7 +338,7 @@ private extension FlipAnalyzer {
     /// Normalises the many string variants Cian uses for seller type.
     /// Falls back to sellerName when sellerType is nil — catches agency brand names
     /// like "Real Estate EXPERT" when the type field is missing from JSON.
-    func computeSellerBonus(apartment: Apartment) -> Int {
+    nonisolated func computeSellerBonus(apartment: Apartment) -> Int {
         // Prefer type field; fall back to name to catch agency brands
         let raw = apartment.sellerType ?? apartment.sellerName ?? ""
         let t = raw.lowercased()
@@ -309,7 +351,7 @@ private extension FlipAnalyzer {
         return isProfessional ? 3 : 0
     }
 
-    func demandLevel(perDay: Double, thresholds: DemandThresholds) -> DemandLevel {
+    nonisolated func demandLevel(perDay: Double, thresholds: DemandThresholds) -> DemandLevel {
         switch Int(perDay) {
         case thresholds.hot...:      return .hot
         case thresholds.market...:   return .market
@@ -326,7 +368,7 @@ extension FlipAnalyzer {
     /// Extract the Moscow okrug name from an address string.
     /// Order matters: 4-char abbreviations must be checked before their 3-char substrings
     /// (e.g. "ЮВАО" contains "ВАО", "СЗАО" contains "ЗАО").
-    func extractOkrug(from address: String) -> String {
+    nonisolated func extractOkrug(from address: String) -> String {
         // Pass 1: abbreviations (4-char before 3-char to avoid substring collision)
         let okrugs = [
             "СВАО", "ЮВАО", "ЮЗАО", "СЗАО",    // 4-char — checked first
@@ -425,7 +467,7 @@ extension FlipAnalyzer {
 
     /// Extract the Moscow district name from an address string.
     /// Cian addresses contain "р-н <DistrictName>" as a comma-separated fragment.
-    func extractDistrict(from address: String) -> String? {
+    nonisolated func extractDistrict(from address: String) -> String? {
         let pattern = "р-н\\s+([^,]+)"
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: address, range: NSRange(address.startIndex..., in: address)),
@@ -438,11 +480,11 @@ extension FlipAnalyzer {
 
 private extension FlipAnalyzer {
 
-    func percentile(of values: [Double], target: Double) -> Double {
+    nonisolated func percentile(of values: [Double], target: Double) -> Double {
         guard !values.isEmpty else { return 0 }
         let sorted = values.sorted()
-        if target <= 0.0 { return sorted.first! }
-        if target >= 1.0 { return sorted.last! }
+        if target <= 0.0 { return sorted.first ?? 0 }
+        if target >= 1.0 { return sorted.last ?? 0 }
         let index = Double(sorted.count - 1) * target
         let lower = Int(floor(index))
         let upper = Int(ceil(index))

@@ -190,7 +190,7 @@ struct FlipAnalyzerBenchmarkTests {
             apt.area = 50
             apartments.append(apt)
         }
-        let ctx = analyzer.buildBenchmark(from: apartments)
+        let ctx = analyzer.buildBenchmark(from: apartments, targetPercentile: 0.5)
         #expect(ctx.byOkrug["ЦАО"] != nil)
         #expect(ctx.globalSampleSize == 6)
     }
@@ -209,7 +209,7 @@ struct FlipAnalyzerBenchmarkTests {
             apt.area = 50
             apartments.append(apt)
         }
-        let ctx = analyzer.buildBenchmark(from: apartments)
+        let ctx = analyzer.buildBenchmark(from: apartments, targetPercentile: 0.5)
         // ЦАО has only 4 samples → should not appear in byOkrug
         #expect(ctx.byOkrug["ЦАО"] == nil)
         // СAО has 5 samples → should appear
@@ -224,6 +224,7 @@ struct FlipAnalyzerBenchmarkTests {
         let result = FlipScoreResult(
             totalScore: 80,
             priceScore: 40, metroScore: 20, locationScore: 20, isDistrictScore: false, areaScore: 0,
+            sellerBonus: 0,
             priceSqm: 150_000, benchmarkSqm: 200_000,
             benchmarkOkrug: "ЦАО", benchmarkSampleSize: 10,
             demandLevel: .market, viewsPerDay: 120
@@ -263,7 +264,8 @@ struct CianResponseHTMLParserTests {
     @Test("Extracts basic apartment fields from HTML")
     func extractOffers_basicFields() throws {
         let html = "<html><body>\(makeArticleHTML())</body></html>"
-        let results = CianDataExtractor.extractData(from: html)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: html)
         let apt = try #require(results.first)
         #expect(apt.id == "123456789")
         #expect(apt.price == 9_500_000)
@@ -277,7 +279,8 @@ struct CianResponseHTMLParserTests {
     @Test("Extracts floor and area from title")
     func extractOffers_floorAndArea() throws {
         let html = "<html><body>\(makeArticleHTML())</body></html>"
-        let results = CianDataExtractor.extractData(from: html)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: html)
         let apt = try #require(results.first)
         #expect(apt.floor == 7)
         #expect(apt.totalFloors == 16)
@@ -287,7 +290,8 @@ struct CianResponseHTMLParserTests {
     @Test("Detects studio from title")
     func extractOffers_studio() throws {
         let html = "<html><body>\(makeArticleHTML(title: "Студия, 24,2 м², 3/12 этаж"))</body></html>"
-        let results = CianDataExtractor.extractData(from: html)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: html)
         let apt = try #require(results.first)
         #expect(apt.roomsCount == 0)
     }
@@ -295,7 +299,8 @@ struct CianResponseHTMLParserTests {
     @Test("Detects rooms count from title")
     func extractOffers_roomsCount() throws {
         let html = "<html><body>\(makeArticleHTML(title: "3-комн. квартира, 78 м², 5/9 этаж"))</body></html>"
-        let results = CianDataExtractor.extractData(from: html)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: html)
         let apt = try #require(results.first)
         #expect(apt.roomsCount == 3)
     }
@@ -303,7 +308,8 @@ struct CianResponseHTMLParserTests {
     @Test("Returns empty array for HTML with no articles")
     func extractOffers_noArticles() {
         let html = "<html><body><p>Ничего не найдено</p></body></html>"
-        #expect(CianDataExtractor.extractData(from: html).isEmpty)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        #expect(extractor.extractData(from: html).isEmpty)
     }
 
     @Test("Skips article if /flat/ URL is not present")
@@ -317,7 +323,8 @@ struct CianResponseHTMLParserTests {
         </article>
         </body></html>
         """
-        #expect(CianDataExtractor.extractData(from: html).isEmpty)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        #expect(extractor.extractData(from: html).isEmpty)
     }
 
     @Test("Parses multiple articles")
@@ -325,7 +332,8 @@ struct CianResponseHTMLParserTests {
         let a1 = makeArticleHTML(id: "111", title: "1-комн. квартира, 35 м², 3/5 этаж", price: "5 000 000 \u{20BD}")
         let a2 = makeArticleHTML(id: "222", title: "2-комн. квартира, 54 м², 8/12 этаж", price: "8 500 000 \u{20BD}")
         let html = "<html><body>\(a1)\(a2)</body></html>"
-        let results = CianDataExtractor.extractData(from: html)
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: html)
         #expect(results.count == 2)
         #expect(results.map(\.id).contains("111"))
         #expect(results.map(\.id).contains("222"))
@@ -340,7 +348,8 @@ struct CianResponseHTMLParserTests {
           <div data-name="ContentRow">3 000 000 \u{20BD}</div>
         </article>
         """
-        let results = CianDataExtractor.extractData(from: "<html><body>\(articleHTML)</body></html>")
+        let extractor = CianDataExtractor(selectorsManager: SelectorsManager())
+        let results = extractor.extractData(from: "<html><body>\(articleHTML)</body></html>")
         let apt = try #require(results.first)
         #expect(apt.url.hasPrefix("https://www.cian.ru"))
     }
@@ -368,7 +377,8 @@ struct CianDetailParserViewsTests {
     @Test("Parses views with comma separator")
     func views_commaSeparator() throws {
         let apt = makeApartment()
-        CianDetailParser.parseDetailJSON(jsonString: makeJSON(viewsString: "1 709 просмотров, 44 за сегодня"), apartment: apt)
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        parser.parseDetailJSON(jsonString: makeJSON(viewsString: "1 709 просмотров, 44 за сегодня"), apartment: apt)
         #expect(apt.viewsTotal == 1709)
         #expect(apt.viewsToday == 44)
     }
@@ -376,7 +386,8 @@ struct CianDetailParserViewsTests {
     @Test("Parses views with middle-dot separator")
     func views_dotSeparator() throws {
         let apt = makeApartment()
-        CianDetailParser.parseDetailJSON(jsonString: makeJSON(viewsString: "446 просмотров · 513 за сегодня"), apartment: apt)
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        parser.parseDetailJSON(jsonString: makeJSON(viewsString: "446 просмотров · 513 за сегодня"), apartment: apt)
         #expect(apt.viewsTotal == 446)
         #expect(apt.viewsToday == 513)
     }
@@ -387,7 +398,8 @@ struct CianDetailParserViewsTests {
         let json = """
         {"props":{"pageProps":{"initialState":{"offerData":{"offer":{}}}}}}
         """
-        CianDetailParser.parseDetailJSON(jsonString: json, apartment: apt)
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        parser.parseDetailJSON(jsonString: json, apartment: apt)
         #expect(apt.viewsToday == nil)
     }
 }
@@ -437,5 +449,139 @@ struct FlipAnalyzerDemandTests {
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .hot)
+    }
+}
+
+// MARK: - FilterCoordinator Tests
+
+@Suite("FilterCoordinator Tests")
+struct FilterCoordinatorTests {
+
+    private func makeApartment(
+        id: String = UUID().uuidString,
+        status: ApartmentStatus = .new,
+        isDetailedParsed: Bool = true,
+        isStudio: Bool = false,
+        isApartments: Bool = false,
+        isAuction: Bool = false,
+        isDepositPaid: Bool = false,
+        metro: String? = nil,
+        metroDistance: Int? = nil,
+        metroTransportType: String? = nil,
+        totalFloors: Int? = nil,
+        district: String? = nil,
+        okrug: String? = nil,
+        roomsCount: Int? = nil
+    ) -> Apartment {
+        let apt = Apartment(id: id, title: "Test", price: 10_000_000, url: "", address: "Moscow")
+        apt.status = status
+        apt.isDetailedParsed = isDetailedParsed
+        apt.isStudioFlag = isStudio
+        apt.isApartmentsFlag = isApartments
+        apt.isAuction = isAuction
+        apt.isDepositPaid = isDepositPaid
+        apt.metro = metro
+        apt.metroDistance = metroDistance
+        apt.metroTransportType = metroTransportType
+        apt.totalFloors = totalFloors
+        apt.district = district
+        apt.okrug = okrug
+        apt.roomsCount = roomsCount
+        return apt
+    }
+
+    @Test("Status filter: filters active/ignored/ban correctly")
+    func testStatusFilter() {
+        let coordinator = FilterCoordinator()
+        let activeApt = makeApartment(status: .new)
+        let banApt = makeApartment(status: .ban)
+        
+        // Active should be kept, ban should be dropped (by default defaultVisible does not contain ban)
+        #expect(coordinator.shouldKeep(apartment: activeApt, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: banApt, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        
+        coordinator.toggleStatusFilter(.ban)
+        #expect(coordinator.shouldKeep(apartment: banApt, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+    }
+
+    @Test("Require detail parsed option")
+    func testRequireDetailParsed() {
+        let coordinator = FilterCoordinator()
+        let parsed = makeApartment(isDetailedParsed: true)
+        let unparsed = makeApartment(isDetailedParsed: false)
+        
+        coordinator.requireDetailParsed = true
+        #expect(coordinator.shouldKeep(apartment: parsed, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: unparsed, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+    }
+
+    @Test("Hide studios and apartments option")
+    func testHideStudiosAndApartments() {
+        let coordinator = FilterCoordinator()
+        let studio = makeApartment(isStudio: true)
+        let apartment = makeApartment(isApartments: true)
+        
+        coordinator.hideStudios = true
+        #expect(coordinator.shouldKeep(apartment: studio, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        #expect(coordinator.shouldKeep(apartment: apartment, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        
+        coordinator.hideStudios = false
+        coordinator.hideApartments = true
+        #expect(coordinator.shouldKeep(apartment: studio, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: apartment, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+    }
+
+    @Test("Auctions and deposits filter")
+    func testAuctionsAndDeposits() {
+        let coordinator = FilterCoordinator()
+        let auction = makeApartment(isAuction: true)
+        let deposit = makeApartment(isDepositPaid: true)
+        
+        // Default is showAuctions = false, showDeposits = false
+        #expect(coordinator.shouldKeep(apartment: auction, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        #expect(coordinator.shouldKeep(apartment: deposit, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        
+        coordinator.showAuctions = true
+        coordinator.showDeposits = true
+        #expect(coordinator.shouldKeep(apartment: auction, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: deposit, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+    }
+
+    @Test("Metro distance and walking only filter")
+    func testMetroDistanceAndTransport() {
+        let coordinator = FilterCoordinator()
+        let farWalk = makeApartment(metroDistance: 15, metroTransportType: "walk")
+        let closeTransport = makeApartment(metroDistance: 5, metroTransportType: "transport")
+        
+        coordinator.maxMetroDistance = 10
+        #expect(coordinator.shouldKeep(apartment: farWalk, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        #expect(coordinator.shouldKeep(apartment: closeTransport, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        
+        coordinator.metroWalkOnly = true
+        #expect(coordinator.shouldKeep(apartment: closeTransport, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+    }
+
+    @Test("Active Okrug filters")
+    func testActiveOkrugFilters() {
+        let coordinator = FilterCoordinator()
+        let caoApt = makeApartment(okrug: "ЦАО")
+        let saoApt = makeApartment(okrug: "САО")
+        
+        coordinator.toggleOkrugFilter("ЦАО")
+        #expect(coordinator.shouldKeep(apartment: caoApt, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: saoApt, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+    }
+
+    @Test("Active Room filters")
+    func testActiveRoomFilters() {
+        let coordinator = FilterCoordinator()
+        let studio = makeApartment(isStudio: true)
+        let room1 = makeApartment(roomsCount: 1)
+        let room3 = makeApartment(roomsCount: 3)
+        
+        coordinator.toggleRoomFilter(1)
+        #expect(coordinator.shouldKeep(apartment: studio, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+        #expect(coordinator.shouldKeep(apartment: room1, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
+        #expect(coordinator.shouldKeep(apartment: room3, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
     }
 }

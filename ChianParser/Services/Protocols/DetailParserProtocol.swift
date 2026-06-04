@@ -6,7 +6,7 @@
 import Foundation
 
 /// Abstracts the parsing of a single apartment's detail page (JSON or HTML fallback).
-protocol DetailParserProtocol {
+protocol DetailParserProtocol: Sendable {
     func parseJSON(jsonString: String, apartment: Apartment)
     func parseHTML(html: String, apartment: Apartment)
 }

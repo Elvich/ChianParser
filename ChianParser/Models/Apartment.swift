@@ -44,6 +44,9 @@ final class Apartment {
     var apartmentDescription: String? // Полное описание
     var imageURLs: [String] = []      // URL фотографий
     
+    // Семантические теги (для фильтрации и ML)
+    var semanticTags: [String]?
+    
     // Информация о продавце
     var sellerType: String?     // Тип продавца (собственник, агент)
     var sellerName: String?     // Имя продавца

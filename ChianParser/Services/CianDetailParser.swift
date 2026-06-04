@@ -8,11 +8,21 @@
 import Foundation
 import SwiftSoup
 
-final class CianDetailParser {
+final class CianDetailParser: @unchecked Sendable {
+    
+    // MARK: - Dependencies
+    public let selectorsManager: any SelectorsManagerProtocol
+
+    // MARK: - Init
+    public init(selectorsManager: any SelectorsManagerProtocol = SelectorsManager()) {
+        self.selectorsManager = selectorsManager
+    }
+    
+    // MARK: - Instance Methods
     
     /// Парсит JSON из `window.__NEXT_DATA__` (предпочтительный метод) и обновляет объект Apartment.
     /// Вызывается из DetailPageLoader, когда JSON был извлечён напрямую через JS без загрузки полного HTML.
-    static func parseDetailJSON(jsonString: String, apartment: Apartment) {
+    func parseDetailJSON(jsonString: String, apartment: Apartment) {
         let oldViewsTotal = apartment.viewsTotal
         let oldLastUpdate = apartment.lastUpdate
         
@@ -20,6 +30,7 @@ final class CianDetailParser {
         if tryExtractFromJSON(html: wrappedHTML, apartment: apartment) {
             applyTitleFallback(apartment: apartment)
             updateViewsSnapshot(apartment: apartment, oldViewsTotal: oldViewsTotal, oldLastUpdate: oldLastUpdate)
+            generateBasicTags(for: apartment)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
             print("✅ [Detail] \(apartment.id) цена=\(apartment.price) площадь=\(apartment.area.map { String($0) } ?? "?") метро=\(apartment.metro ?? "?")")
@@ -32,13 +43,9 @@ final class CianDetailParser {
     /// - Parameters:
     ///   - html: HTML-код страницы объявления
     ///   - apartment: Объект квартиры для обновления
-    static func parseDetailPage(html: String, apartment: Apartment) {
+    func parseDetailPage(html: String, apartment: Apartment) {
         let oldViewsTotal = apartment.viewsTotal
         let oldLastUpdate = apartment.lastUpdate
-
-        
-        // DEBUG: Сохранение HTML для отладки (раскомментируйте при необходимости)
-        // saveHTMLForDebug(html: html, apartmentId: apartment.id)
         
         do {
             let doc = try SwiftSoup.parse(html)
@@ -75,6 +82,7 @@ final class CianDetailParser {
             
             // Отмечаем, что детальный парсинг выполнен
             updateViewsSnapshot(apartment: apartment, oldViewsTotal: oldViewsTotal, oldLastUpdate: oldLastUpdate)
+            generateBasicTags(for: apartment)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
             
@@ -85,20 +93,78 @@ final class CianDetailParser {
         }
     }
     
+    // MARK: - Semantic Tags Generator
+    
+    /// Генерирует базовые семантические теги на основе уже распарсенных данных
+    private func generateBasicTags(for apartment: Apartment) {
+        var tags: [String] = []
+        
+        // 1. Комнаты
+        if apartment.isStudio {
+            tags.append("Студия")
+        } else if let rooms = apartment.roomsCount {
+            if rooms >= 4 {
+                tags.append("4+ комн.")
+            } else {
+                tags.append("\(rooms)-комн.")
+            }
+        }
+        
+        // 2. Метро
+        if let metroDist = apartment.metroDistance {
+            if metroDist <= 5 {
+                tags.append("до 5 мин")
+            } else if metroDist <= 10 {
+                tags.append("до 10 мин")
+            } else if metroDist <= 15 {
+                tags.append("до 15 мин")
+            } else {
+                tags.append("> 15 мин")
+            }
+        }
+        
+        // 3. Этаж
+        if let floor = apartment.floor, let total = apartment.totalFloors, total > 0 {
+            if floor == 1 {
+                tags.append("Первый этаж")
+            } else if floor == total {
+                tags.append("Последний этаж")
+            } else if floor == total - 1 {
+                tags.append("Предпоследний этаж")
+            }
+        }
+        
+        // 4. Площадь
+        if let area = apartment.area {
+            if area < 30 {
+                tags.append("до 30 м²")
+            } else if area <= 50 {
+                tags.append("30-50 м²")
+            } else if area <= 70 {
+                tags.append("50-70 м²")
+            } else {
+                tags.append("> 70 м²")
+            }
+        }
+        
+        // 5. Особенности
+        if apartment.isAuction { tags.append("Аукцион") }
+        if apartment.isAlternative { tags.append("Альтернатива") }
+        if apartment.isShare { tags.append("Доля") }
+        if apartment.isApartments { tags.append("Апартаменты") }
+        if apartment.isPaidPromotion { tags.append("Продвижение (\(apartment.promotionType ?? ""))") }
+        
+        apartment.semanticTags = tags
+    }
+    
     // MARK: - JSON Detail Extraction
     
-    private static func tryExtractFromJSON(html: String, apartment: Apartment) -> Bool {
+    private func tryExtractFromJSON(html: String, apartment: Apartment) -> Bool {
         do {
             let doc = try SwiftSoup.parse(html)
             
-            // Пробуем разные селекторы для JSON
-            let jsonSelectors = [
-                "script#__NEXT_DATA__",
-                "script[type='application/json']",
-                "script[id*='__']",
-                "script:containsData(offerData)",
-                "script:containsData(cianAd)"
-            ]
+            // Пробуем разные селекторы для JSON из SelectorsManager
+            let jsonSelectors = selectorsManager.config.detail.jsonSelectors
             
             var jsonTag: Element?
             var jsonString = ""
@@ -136,10 +202,9 @@ final class CianDetailParser {
             }
             
             // КЛЮЧЕВОЕ: все поля квартиры вложены в offerData["offer"], не в offerData напрямую
-            // Это аналогично уже исправленному пути для stats: offerData.offer.stats
             let offerNode = (offerData["offer"] as? [String: Any]) ?? offerData
             
-            // 0. Цена и заголовок (обновляем из детальной страницы — более надёжно чем из поиска)
+            // 0. Цена и заголовок
             let bargainTerms = (offerNode["bargainTerms"] as? [String: Any])
                 ?? (offerData["bargainTerms"] as? [String: Any])
             if let bt = bargainTerms {
@@ -159,7 +224,7 @@ final class CianDetailParser {
                 if let t = t, !t.isEmpty { apartment.title = t }
             }
             
-            // 1. Площадь (offerNode["totalArea"] → offerData["totalArea"] → fallback)
+            // 1. Площадь
             apartment.area = extractDouble(offerNode["totalArea"])
                 ?? extractDouble(offerNode["area"])
                 ?? extractDouble(offerData["totalArea"])
@@ -203,7 +268,7 @@ final class CianDetailParser {
             }
             apartment.imageURLs = Array(Set(photos.filter { !$0.isEmpty }))
             
-            // 5. Дом (расширенный парсинг — building может быть в offerData или offerNode)
+            // 5. Дом
             if let building = (offerNode["building"] as? [String: Any])
                 ?? (offerData["building"] as? [String: Any])
                 ?? (findValue(forKey: "building", in: jsonObject) as? [String: Any]) {
@@ -215,7 +280,6 @@ final class CianDetailParser {
                 if let elevatorData = building["passenger_lifts_count"] ?? building["lifts"] {
                     if let count = extractInt(elevatorData), count > 0 { apartment.elevator = "\(count) шт." }
                 }
-                
             }
             
             // Дополнительные характеристики квартиры
@@ -229,30 +293,24 @@ final class CianDetailParser {
             }
             apartment.windowView = (offerNode["windowView"] as? String) ?? (offerData["windowView"] as? String)
             
-            // 6. Адрес и метро (расширенное извлечение)
-
-            // geo может быть в offerNode["geo"] или offerData["geo"]
+            // 6. Адрес и метро
             if let geo = (offerNode["geo"] as? [String: Any])
                 ?? (offerData["geo"] as? [String: Any])
                 ?? (findValue(forKey: "geo", in: jsonObject) as? [String: Any]) {
-                // Пробуем разные способы получить адрес
                 var addressComponents: [String] = []
                 
-                // Способ 1: Массив address с компонентами
                 if let addressArray = geo["address"] as? [[String: Any]] {
                     addressComponents = addressArray.compactMap { 
                         ($0["fullName"] as? String) ?? ($0["title"] as? String) ?? ($0["name"] as? String) 
                     }
                 }
                 
-                // Способ 2: Строка displayAddress
                 if addressComponents.isEmpty {
                     if let displayAddr = (geo["displayAddress"] as? String) ?? (geo["userInputAddress"] as? String) {
                         addressComponents = [displayAddr]
                     }
                 }
                 
-                // Способ 3: Разбираем отдельные поля (город, улица, дом)
                 if addressComponents.isEmpty {
                     if let city = geo["city"] as? String { addressComponents.append(city) }
                     if let street = geo["street"] as? String { addressComponents.append(street) }
@@ -267,20 +325,14 @@ final class CianDetailParser {
                 // Метро
                 if let undergrounds = geo["undergrounds"] as? [[String: Any]], let metro = undergrounds.first {
                     apartment.metro = (metro["name"] as? String) ?? (metro["title"] as? String)
-                    // Fields: travelTime (minutes), travelType ("walk"/"transport")
-                    // Treat time == 0 as "not specified" — Cian uses 0 as a sentinel value
                     if let time = extractInt(metro["travelTime"]) ?? extractInt(metro["time"]) ?? extractInt(metro["distance"]), time > 0 {
                         apartment.metroDistance = time
                     }
                     apartment.metroTransportType = (metro["travelType"] as? String) ?? (metro["transportType"] as? String)
-
-
                 }
             }
             
-            // Если всё еще пусто, ищем поле address в корне или pageProps
             if apartment.address.isEmpty || apartment.address == "Адрес не указан" {
-                // Брутфорс через рекурсивный поиск
                 let possibleKeys = ["displayAddress", "userInputAddress", "address", "fullAddress", "location"]
                 for key in possibleKeys {
                     if let addr = findValue(forKey: key, in: jsonObject) as? String, !addr.isEmpty {
@@ -290,25 +342,19 @@ final class CianDetailParser {
                 }
             }
             
-            // 7. Статистика (расширенная)
-            // offerNode уже определён выше как offerData["offer"]
-            // stats может лежать как в offerData["offer"]["stats"], так и прямо в offerData["stats"]
+            // 7. Статистика
             let statsNode = (offerNode["stats"] as? [String: Any])
                 ?? (offerData["stats"] as? [String: Any])
             
-            // --- DEBUG: Ищем историю просмотров ---
             if let stats = statsNode {
                 print("  🔍 DEBUG: Ключи внутри stats: \(stats.keys.joined(separator: ", "))")
-                // Проверим, нет ли внутри массивов (обычно так выглядит история для графика)
                 for (key, value) in stats {
                     if let array = value as? [Any] {
                         print("  🔍 DEBUG: Найден массив в stats['\(key)']: \(array)")
                     }
                 }
             }
-            // --------------------------------------
             
-            // Вариант А: числа напрямую (расширенный набор ключей)
             if let stats = statsNode {
                 apartment.viewsTotal = extractInt(stats["total"])
                     ?? extractInt(stats["totalViews"])
@@ -321,7 +367,6 @@ final class CianDetailParser {
                     ?? extractInt(stats["dayViews"])
             }
             
-            // Вариант Б: форматированная строка "1709 просмотров, 44 за сегодня"
             if apartment.viewsTotal == nil || apartment.viewsToday == nil {
                 let formattedStr = statsNode?["totalViewsFormattedString"] as? String
                     ?? offerNode["totalViewsFormattedString"] as? String
@@ -331,7 +376,6 @@ final class CianDetailParser {
                 }
             }
             
-            // Вариант В: рекурсивный поиск (fallback)
             if apartment.viewsTotal == nil || apartment.viewsToday == nil {
                 if let stats = findValue(forKey: "stats", in: jsonObject) as? [String: Any] {
                     if let formatted = stats["totalViewsFormattedString"] as? String {
@@ -353,15 +397,10 @@ final class CianDetailParser {
                 }
             }
 
-            // Вариант Г: поиск по всему JSON-строке (last resort)
-            // Циан может хранить строку в разных полях — ищем любую "N просмотров · M за сегодня"
             if apartment.viewsToday == nil {
                 parseViewsFormattedString(jsonString, apartment: apartment)
             }
 
-            // Вариант Д: sentinel-поля __domViewsTotal / __domViewsToday
-            // JS-скрипт вытащил числа просмотров прямо из DOM и записал в корень JSON.
-            // Это страховочный вариант, когда stats вообще нет в __NEXT_DATA__.
             if apartment.viewsTotal == nil {
                 apartment.viewsTotal = extractInt(jsonObject["__domViewsTotal"])
             }
@@ -387,13 +426,17 @@ final class CianDetailParser {
             apartment.isAlternative = saleType.lowercased().contains("alternative")
 
             let descLower = apartment.apartmentDescription?.lowercased() ?? ""
-            let depositPhrases = ["залог внесен", "залог внесён", "задаток внесен", "задаток внесён",
-                                  "аванс внесен", "аванс внесён", "внесен залог", "внесён залог",
-                                  "внесен задаток", "внесён задаток", "внесен аванс", "внесён аванс"]
+            let depositPhrases = [
+                "залог внесен", "залог внесён", "задаток внесен", "задаток внесён",
+                "аванс внесен", "аванс внесён", "внесен залог", "внесён залог",
+                "внесен задаток", "внесён задаток", "внесен аванс", "внесён аванс",
+                "под авансом", "принят аванс", "получен аванс", "взяли аванс", "дали аванс",
+                "под залогом", "принят залог", "получен залог",
+                "под бронью", "квартира забронирована", "забронировано", "бронь до"
+            ]
             apartment.isDepositPaid = depositPhrases.contains { descLower.contains($0) }
 
-            // 11. Платное продвижение (Топ, Премиум, Стандарт)
-            // placementType / promotionType могут лежать в offerNode, offerData или корне JSON
+            // 11. Платное продвижение
             let placement = ((offerNode["placementType"] as? String)
                 ?? (offerData["placementType"] as? String)
                 ?? (offerNode["promotionType"] as? String)
@@ -407,26 +450,22 @@ final class CianDetailParser {
                 print("  📢 Продвижение: \(placement) — \(apartment.id)")
             }
 
-            // 10. Тип объекта: студия и апартаменты
+            // 10. Тип объекта
             let category = ((offerNode["category"] as? String) ?? (offerData["category"] as? String) ?? "").lowercased()
             let flatType  = ((offerNode["flatType"]  as? String) ?? (offerData["flatType"]  as? String)
                 ?? (offerNode["objectType"] as? String) ?? (offerData["objectType"] as? String) ?? "").lowercased()
             let titleLower = apartment.title.lowercased()
 
-            // Studio: JSON flatType=="studio", or roomsCount==0, or title/description
             if flatType == "studio" || category.contains("studio")
                 || titleLower.hasPrefix("студия")
                 || descLower.contains("студия") {
                 apartment.isStudioFlag = true
             }
-            // Апартаменты: Cian category "apartmentSale" / "newBuildingApartmentSale" etc.,
-            // or title/description mention it explicitly
             if category.contains("apartment")
                 || titleLower.contains("апартамент")
                 || descLower.contains("апартамент") {
                 apartment.isApartmentsFlag = true
             }
-            // Доли
             if category.contains("share") || titleLower.contains("доля") {
                 apartment.isShare = true
             }
@@ -441,7 +480,7 @@ final class CianDetailParser {
                 apartment.publishedDate = Date(timeIntervalSince1970: ts)
             }
             
-            // 8. Продавец (расширенный)
+            // 8. Продавец
             let sellerNode = (offerNode["seller"] as? [String: Any])
                 ?? (offerNode["agent"] as? [String: Any])
                 ?? (offerData["seller"] as? [String: Any])
@@ -449,7 +488,6 @@ final class CianDetailParser {
             if let seller = sellerNode {
                 apartment.sellerName = (seller["name"] as? String) ?? (seller["alias"] as? String) ?? (seller["companyName"] as? String)
                 apartment.sellerType = (seller["type"] as? String) ?? (seller["category"] as? String)
-                
             }
             return true
         } catch {
@@ -458,7 +496,7 @@ final class CianDetailParser {
     }
     
     // Рекурсивный поиск ключа
-    private static func findValue(forKey key: String, in dictionary: [String: Any]) -> Any? {
+    private func findValue(forKey key: String, in dictionary: [String: Any]) -> Any? {
         if let value = dictionary[key] { return value }
         for (_, value) in dictionary {
             if let nestedDict = value as? [String: Any] {
@@ -472,14 +510,7 @@ final class CianDetailParser {
         return nil
     }
     
-    // Парсинг форматированной строки просмотров: "1709 просмотров, 44 за сегодня"
-    // или "446 просмотров · 513 за сегодня" (разделитель может быть запятой или средней точкой ·)
-    private static func parseViewsFormattedString(_ text: String, apartment: Apartment) {
-        // Cian formats totals with spaces/NBSP (\u00A0): "1\u{00A0}709 просмотров, 44 за сегодня".
-        // [\d \u00A0] captures both regular spaces and non-breaking spaces used as thousands separators.
-        // Group 1 = total views (may have spaces/NBSP inside), Group 2 = today views.
-
-        // Паттерн 1: полная строка с общим числом + числом за сегодня
+    private func parseViewsFormattedString(_ text: String, apartment: Apartment) {
         let fullPattern = "(\\d[\\d \\u00A0]*\\d|\\d)\\s*просмотр[^,·\\n]*[,·]\\s*(\\d+)\\s*за сегодня"
         if let regex = try? NSRegularExpression(pattern: fullPattern, options: .caseInsensitive),
            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -492,8 +523,6 @@ final class CianDetailParser {
             return
         }
 
-        // Паттерн 2 (fallback): только «N за сегодня» без общего числа
-        // Например: "44 за сегодня" без предшествующего блока просмотров
         let todayOnlyPattern = "(\\d+)\\s*за сегодня"
         if apartment.viewsToday == nil,
            let regex = try? NSRegularExpression(pattern: todayOnlyPattern, options: .caseInsensitive),
@@ -504,7 +533,7 @@ final class CianDetailParser {
     }
     
     // Fallback из заголовка
-    private static func applyTitleFallback(apartment: Apartment) {
+    private func applyTitleFallback(apartment: Apartment) {
         let title = apartment.title
         if apartment.area == nil || apartment.area == 0 {
             let regex = try? NSRegularExpression(pattern: "(\\d+[.,]\\d+|\\d+)\\s*м²")
@@ -526,17 +555,15 @@ final class CianDetailParser {
     
     // MARK: - Views Snapshot Helper
     
-    private static func updateViewsSnapshot(apartment: Apartment, oldViewsTotal: Int?, oldLastUpdate: Date) {
+    private func updateViewsSnapshot(apartment: Apartment, oldViewsTotal: Int?, oldLastUpdate: Date) {
         if let oldTotal = oldViewsTotal, let newTotal = apartment.viewsTotal, newTotal > oldTotal {
             let prevDate = apartment.previousViewsDate ?? Date.distantPast
-            // Обновляем снэпшот только если текущему снэпшоту уже больше 20 часов
             if Date().timeIntervalSince(prevDate) > 20 * 3600 {
                 apartment.previousViewsTotal = oldTotal
                 apartment.previousViewsDate = oldLastUpdate
                 print("  ⏱ Обновлен снэпшот просмотров: \(oldTotal) (зафиксировано от \(oldLastUpdate))")
             }
         } else if apartment.previousViewsTotal == nil, let currentTotal = apartment.viewsTotal {
-             // Инициализация при первом успешном парсинге
              apartment.previousViewsTotal = currentTotal
              apartment.previousViewsDate = oldLastUpdate
         }
@@ -544,7 +571,7 @@ final class CianDetailParser {
     
     // MARK: - Вспомогательные методы
     
-    private static func extractDouble(_ value: Any?) -> Double? {
+    private func extractDouble(_ value: Any?) -> Double? {
         if let d = value as? Double { return d }
         if let i = value as? Int { return Double(i) }
         if let n = value as? NSNumber { return n.doubleValue }
@@ -552,7 +579,7 @@ final class CianDetailParser {
         return nil
     }
     
-    private static func extractInt(_ value: Any?) -> Int? {
+    private func extractInt(_ value: Any?) -> Int? {
         if let i = value as? Int { return i }
         if let n = value as? NSNumber { return n.intValue }
         if let d = value as? Double { return Int(d) }
@@ -563,19 +590,12 @@ final class CianDetailParser {
         return nil
     }
     
-    // MARK: - HTML Fallbacks (Старые методы)
+    // MARK: - HTML Fallbacks
     
-    private static func parseMainCharacteristics(from doc: Document, apartment: Apartment) {
+    private func parseMainCharacteristics(from doc: Document, apartment: Apartment) {
         print("  🔍 DEBUG: Начинаю HTML-парсинг характеристик...")
         
-        // Пробуем разные селекторы для блока характеристик
-        let selectors = [
-            "[data-name='OfferSummaryInfoItem']",
-            "[data-testid='object-summary-info-item']",
-            ".a10a3f92e9--item--_ipjK",
-            "[class*='item']"
-        ]
-        
+        let selectors = selectorsManager.config.detail.mainCharacteristicsSelectors
         var foundItems = false
         
         for selector in selectors {
@@ -587,15 +607,11 @@ final class CianDetailParser {
                     var title = ""
                     var value = ""
                     
-                    // Способ 1: дочерние элементы (надёжнее всего для SwiftSoup)
-                    // data-name="OfferSummaryInfoItem" обычно имеет структуру:
-                    //   <div> <span>Название</span> <span>Значение</span> </div>
                     let children = item.children()
                     if children.count >= 2 {
                         title = (try? children.get(0).text()) ?? ""
                         value = (try? children.get(children.count - 1).text()) ?? ""
                     } else if children.count == 1 {
-                        // Один дочерний элемент — значит у него самого есть дети
                         let grandchildren = children.get(0).children()
                         if grandchildren.count >= 2 {
                             title = (try? grandchildren.get(0).text()) ?? ""
@@ -603,42 +619,33 @@ final class CianDetailParser {
                         }
                     }
                     
-                    // Способ 2: data-mark атрибуты (на случай если Циан их вернул)
                     if title.isEmpty {
-                        title = (try? item.select("[data-mark='OfferSummaryInfoItem/Title']").first()?.text()) ?? ""
+                        title = (try? item.select(selectorsManager.config.detail.mainCharacteristicsTitleSelector).first()?.text()) ?? ""
                     }
                     if value.isEmpty {
-                        value = (try? item.select("[data-mark='OfferSummaryInfoItem/Value']").first()?.text()) ?? ""
+                        value = (try? item.select(selectorsManager.config.detail.mainCharacteristicsValueSelector).first()?.text()) ?? ""
                     }
                     
-                    // Способ 3: если весь текст — разделяем по длинному пробелу / специальным символам
                     if title.isEmpty || value.isEmpty {
                         let fullText = (try? item.text()) ?? ""
-                        // SwiftSoup склеивает текст через пробелы — ищем шаблон "Слово ... цифра/слово"
-                        // Делим по последнему существенному слову
                         let t = fullText.trimmingCharacters(in: .whitespaces)
-                        // Если всё в одной строке, делим на половину по последнему числовому токену
                         if !t.isEmpty {
                             if title.isEmpty { title = t }
                             if value.isEmpty { value = t }
                         }
                     }
                     
-                    // Если ничего не нашли, пропускаем
                     if title.isEmpty && value.isEmpty {
                         continue
                     }
-
                     
                     let titleLower = title.lowercased()
                     let valueCleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     
-                    // Логируем что нашли
                     if !title.isEmpty && !value.isEmpty {
                         print("  📋 \(title): \(valueCleaned)")
                     }
                     
-                    // Парсим по ключевым словам
                     if titleLower.contains("общая площадь") || titleLower.contains("общая") {
                         apartment.area = extractDouble(valueCleaned)
                     }
@@ -688,8 +695,7 @@ final class CianDetailParser {
                         apartment.windowView = valueCleaned
                     }
                 }
-                
-                break // Нашли подходящий селектор
+                break
             }
         }
         
@@ -698,8 +704,7 @@ final class CianDetailParser {
             print("  🔍 Пробую альтернативный парсинг...")
         }
         
-        // Альтернативный селектор для характеристик
-        if let allItems = try? doc.select("[data-name='GeneralInformation'] li, [data-name='AboutFlatItem'], .object_descr_params li") {
+        if let allItems = try? doc.select(selectorsManager.config.detail.alternativeCharacteristicsSelectors) {
             for item in allItems {
                 if let text = try? item.text() {
                     let parts = text.components(separatedBy: ":")
@@ -722,18 +727,12 @@ final class CianDetailParser {
         }
     }
     
-    private static func parseDescription(from doc: Document, apartment: Apartment) {
-        if apartment.apartmentDescription != nil && !apartment.apartmentDescription!.isEmpty {
-            return // Уже есть из JSON
+    private func parseDescription(from doc: Document, apartment: Apartment) {
+        if let desc = apartment.apartmentDescription, !desc.isEmpty {
+            return
         }
         
-        // Несколько селекторов для описания
-        let selectors = [
-            "[data-name='Description']",
-            "[itemprop='description']",
-            ".description_text",
-            "[class*='description']"
-        ]
+        let selectors = selectorsManager.config.detail.descriptionSelectors
         
         for selector in selectors {
             if let desc = try? doc.select(selector).first()?.text(), !desc.isEmpty {
@@ -744,15 +743,14 @@ final class CianDetailParser {
         }
     }
     
-    private static func parseImages(from doc: Document, apartment: Apartment) {
+    private func parseImages(from doc: Document, apartment: Apartment) {
         if !apartment.imageURLs.isEmpty {
-            return // Уже есть из JSON
+            return
         }
         
         print("  🔍 DEBUG: Поиск изображений...")
         var images: [String] = []
         
-        // Способ 1: Прямой поиск img с атрибутами src и data-src
         if let imgs = try? doc.select("img") {
             print("  📸 Найдено img-тегов: \(imgs.count)")
             for img in imgs {
@@ -766,7 +764,6 @@ final class CianDetailParser {
                         images.append(dataSrc)
                     }
                 }
-                // Проверяем srcset
                 if let srcset = try? img.attr("srcset"), !srcset.isEmpty {
                     let urls = srcset.components(separatedBy: ",").compactMap { component -> String? in
                         let url = component.trimmingCharacters(in: .whitespaces).components(separatedBy: " ").first
@@ -777,7 +774,6 @@ final class CianDetailParser {
             }
         }
         
-        // Способ 2: Поиск фоновых изображений в style-атрибутах
         if let elementsWithStyle = try? doc.select("[style*='background-image']") {
             for elem in elementsWithStyle {
                 if let style = try? elem.attr("style") {
@@ -796,7 +792,6 @@ final class CianDetailParser {
             }
         }
         
-        // Способ 3: Брутфорс - ищем все URL с cian.site в HTML
         if images.isEmpty {
             print("  ⚠️ Стандартные способы не сработали, пробую брутфорс...")
             let htmlString = (try? doc.html()) ?? ""
@@ -832,9 +827,7 @@ final class CianDetailParser {
         }
     }
     
-    private static func parseHouseInfo(from doc: Document, apartment: Apartment) {
-        // data-name="BtiHouseData" и data-name="HouseData" удалены с сайта, используем поиск по тексту
-        // Ищем год и материал через универсальные паттерны
+    private func parseHouseInfo(from doc: Document, apartment: Apartment) {
         guard apartment.yearBuilt == nil || apartment.houseMaterial == nil else { return }
         
         let candidates = (try? doc.select("dl, table, [class*='--summary--'], [class*='--params--']")) ?? Elements()
@@ -861,26 +854,18 @@ final class CianDetailParser {
         }
     }
     
-    private static func parseLocation(from doc: Document, apartment: Apartment) {
+    private func parseLocation(from doc: Document, apartment: Apartment) {
         print("  🔍 DEBUG: Парсинг адреса и метро...")
         
-        // Адрес, если ещё не получен
         if apartment.address.isEmpty || apartment.address == "Адрес не указан" {
-            let addressSelectors = [
-                "[data-name='Geo']",
-                "[itemprop='address']",
-                "[class*='address']",
-                "h1[itemprop='name']"
-            ]
+            let addressSelectors = selectorsManager.config.detail.addressSelectors
             
             for selector in addressSelectors {
                 if let addressElement = try? doc.select(selector).first() {
                     if let addr = try? addressElement.text(), !addr.isEmpty {
-                        // Очищаем адрес от мусора (например, "На карте", метро и т.д.)
                         var cleanedAddr = addr
                         cleanedAddr = cleanedAddr.replacingOccurrences(of: "На карте", with: "")
                         
-                        // Убираем информацию о метро (обычно идёт после адреса)
                         if let metroRange = cleanedAddr.range(of: #"\d+\s*мин\."#, options: .regularExpression) {
                             cleanedAddr = String(cleanedAddr[..<metroRange.lowerBound])
                         }
@@ -897,32 +882,25 @@ final class CianDetailParser {
             }
         }
         
-        // Метро
         if apartment.metro == nil {
-            let metroSelectors = [
-                "[data-name='UndergroundStation']",
-                "[class*='underground']",
-                "[class*='metro']",
-                "a[href*='metro']"
-            ]
+            let metroSelectors = selectorsManager.config.detail.metroSelectors
             
             for selector in metroSelectors {
                 if let metroElements = try? doc.select(selector) {
                     for elem in metroElements {
                         if let metroText = try? elem.text(), !metroText.isEmpty {
-                            // Извлекаем название метро (обычно первое слово или всё до чисел)
                             let components = metroText.components(separatedBy: CharacterSet.decimalDigits)
                             if let name = components.first?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
                                 apartment.metro = name
                                 
-                                // Пробуем найти время в пути
                                 let timeRegex = try? NSRegularExpression(pattern: #"(\d+)\s*мин"#)
                                 if let match = timeRegex?.firstMatch(in: metroText, range: NSRange(metroText.startIndex..., in: metroText)),
                                    let range = Range(match.range(at: 1), in: metroText) {
                                     apartment.metroDistance = Int(metroText[range])
                                 }
                                 
-                                print("  🚇 Метро: \(apartment.metro ?? "н/д")\(apartment.metroDistance != nil ? ", \(apartment.metroDistance!) мин" : "")")
+                                let distanceStr = apartment.metroDistance.map { ", \($0) мин" } ?? ""
+                                print("  🚇 Метро: \(apartment.metro ?? "н/д")\(distanceStr)")
                                 break
                             }
                         }
@@ -933,42 +911,28 @@ final class CianDetailParser {
         }
     }
     
-    private static func parseStatistics(from doc: Document, apartment: Apartment) {
-        // ПРИМЕЧАНИЕ: [data-name="OfferStats"] удален с сайта.
-        // Данные о просмотрах извлекаются из JSON в tryExtractFromJSON.
-        // Этот HTML fallback обрабатывает только дату публикации.
-        
-        // Дата публикации
+    private func parseStatistics(from doc: Document, apartment: Apartment) {
         if apartment.publishedDate == nil {
             if let dateElement = try? doc.select("time[datetime]").first() {
                 if let dateStr = try? dateElement.attr("datetime") {
                     let formatter = ISO8601DateFormatter()
                     apartment.publishedDate = formatter.date(from: dateStr)
                 } else if let dateText = try? dateElement.text() {
-                    // Попробуем распарсить текстовую дату
                     print("  📅 Дата публикации (текст): \(dateText)")
                 }
             }
         }
     }
     
-    private static func parseSellerInfo(from doc: Document, apartment: Apartment) {
+    private func parseSellerInfo(from doc: Document, apartment: Apartment) {
         if apartment.sellerName != nil {
-            return // Уже есть из JSON
+            return
         }
         
-        // ПРИМЕЧАНИЕ: [data-name="OfferOwner"] и [data-name="Agent"] удалены с сайта.
-        // Используем data-automation и семантические якоря.
-        let selectors = [
-            "[data-automation='agent-info']",
-            "[data-automation='seller-info']",
-            "[class*='--agent-info--']",
-            "[class*='--owner-info--']"
-        ]
+        let selectors = selectorsManager.config.detail.sellerSelectors
         
         for selector in selectors {
             if let sellerBlock = try? doc.select(selector).first() {
-                // Ищем имя как первый крупный текстовый элемент внутри блока
                 if let name = try? sellerBlock.select("p, span, div").first(where: { (try? $0.text().isEmpty) == false })?.text() {
                     apartment.sellerName = name
                     print("  👤 Продавец (HTML fallback): \(name)")
@@ -978,10 +942,7 @@ final class CianDetailParser {
         }
     }
     
-    // MARK: - Debug Helpers
-    
-    /// Сохраняет HTML в файл для отладки (только для разработки)
-    private static func saveHTMLForDebug(html: String, apartmentId: String) {
+    private func saveHTMLForDebug(html: String, apartmentId: String) {
         #if DEBUG
         let fileName = "apartment_\(apartmentId).html"
         if let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
@@ -997,10 +958,10 @@ final class CianDetailParser {
 
 extension CianDetailParser: DetailParserProtocol {
     func parseJSON(jsonString: String, apartment: Apartment) {
-        CianDetailParser.parseDetailJSON(jsonString: jsonString, apartment: apartment)
+        self.parseDetailJSON(jsonString: jsonString, apartment: apartment)
     }
 
     func parseHTML(html: String, apartment: Apartment) {
-        CianDetailParser.parseDetailPage(html: html, apartment: apartment)
+        self.parseDetailPage(html: html, apartment: apartment)
     }
 }

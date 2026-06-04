@@ -54,6 +54,8 @@ private struct DemandSettingsTab: View {
     @AppStorage("demandThresholdHot")      private var hot: Int      = DemandThresholds.default.hot
     @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
 
+    @AppStorage("useViewsScoreInsteadOfMetro") private var useViewsScoreInsteadOfMetro: Bool = false
+
     var body: some View {
         Form {
             Section {
@@ -75,10 +77,11 @@ private struct DemandSettingsTab: View {
 
             Section {
                 Toggle("Кривая ликвидности для площади", isOn: $useLiquidityAreaScore)
+                Toggle("Баллы за просмотры вместо метро", isOn: $useViewsScoreInsteadOfMetro)
             } header: {
                 Text("Оценка площади (FlipScore)")
             } footer: {
-                Text("Оптимизирует баллы под флиппинг (максимум за 35-50 м², штраф за неликвидные размеры). При выключенном ползунке используется стандартная логика 'чем больше, тем лучше'.")
+                Text("Оптимизирует баллы под флиппинг (максимум за 35-50 м², штраф за неликвидные размеры). При включении просмотра вместо метро, очки за спрос заменяют баллы удаленности от метро.")
             }
 
             Section {
@@ -421,13 +424,15 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserAutoDetail")       private var autoDetail: Bool = true
     @AppStorage("parserAutoCheck")        private var autoCheck: Bool = true
     @AppStorage("parserStaleDays")        private var staleDays: Int = 3
+    @AppStorage("moderateReparseHours")   private var moderateReparseHours: Int = 12
     @AppStorage("parserEnablePagination") private var enablePagination: Bool = true
     @AppStorage("parserMaxPages")         private var maxPages: Int = 1
     @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
-    @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = false
+    @AppStorage("parserRequireDetail")    private var requireDetailParsed: Bool = true
     @AppStorage("hideStudios")            private var hideStudios: Bool = false
     @AppStorage("hideApartments")         private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")     private var penalizePromotions: Bool = true
+    @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -457,16 +462,26 @@ private struct ParserSettingsTab: View {
                 Toggle("Скрывать студии", isOn: $hideStudios)
                 Toggle("Скрывать апартаменты", isOn: $hideApartments)
                 Toggle("Пессимизировать просмотры у рекламы", isOn: $penalizePromotions)
-                    .help("Делит просмотры на 1.5 для Стандарта и на 2.0 для Премиум/Топ-3 объявлений, чтобы нивелировать накрутку просмотров.")
+                    .help("Делит просмотры на 1.5 для Стандарта и на 3.0 для ТОП-3 объявлений, чтобы нивелировать накрутку просмотров.")
+                Toggle("Экстраполяция утренних просмотров", isOn: $extrapolateMorningViews)
+                    .help("Умный пересчёт просмотров 'за сегодня' в утренние часы с учетом суточной кривой активности пользователей.")
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")
                         Spacer()
                         Text("\(staleDays) дн.")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                            .foregroundColor(.secondary)
                     }
                 }
+                Stepper(value: $moderateReparseHours, in: 6...72, step: 6) {
+                    HStack {
+                        Text("Перепарсинг 'умеренных' квартир")
+                        Spacer()
+                        Text("каждые \(moderateReparseHours) ч.")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .help("Частота обновления квартир со статусом Умеренный спрос во время простоя парсера.").monospacedDigit()
                 .disabled(!autoCheck)
             } header: {
                 Text("Детальный парсинг")
@@ -523,7 +538,7 @@ private struct ParserSettingsTab: View {
                     enablePagination = true
                     maxPages = 1
                     parserMode = .parallel
-                    requireDetailParsed = false
+                    requireDetailParsed = true
                 }
                 .foregroundStyle(.red)
             }

@@ -9,13 +9,18 @@ import Foundation
 import SwiftSoup
 
 // MARK: - Главный класс для извлечения данных
-final class CianDataExtractor {
+final class CianDataExtractor: SearchParserProtocol, @unchecked Sendable {
     
-    // MARK: - Единая точка входа
-    /// Извлекает данные о квартирах.
-    /// Принимает либо "__NEXT_DATA__:<json>" (прямой JSON из JS), либо полный HTML.
-    /// Приоритет: прямой JSON → JSON из HTML → HTML парсинг
-    static func extractData(from input: String) -> [Apartment] {
+    // MARK: - Dependencies
+    public let selectorsManager: any SelectorsManagerProtocol
+
+    // MARK: - Init
+    public nonisolated init(selectorsManager: any SelectorsManagerProtocol = SelectorsManager()) {
+        self.selectorsManager = selectorsManager
+    }
+
+    // MARK: - Instance Entry Point
+    public nonisolated func extractData(from input: String) -> [Apartment] {
         // Fast path: XHR/fetch intercepted API response
         let apiPrefix = "__API__:"
         if input.hasPrefix(apiPrefix) {
@@ -58,7 +63,7 @@ final class CianDataExtractor {
 
     /// Parse a raw Cian API response JSON (captured via XHR/fetch interception).
     /// Cian API responses contain offer arrays under various paths — we search flexibly.
-    private static func parseAPIResponseJSON(_ jsonString: String) -> [Apartment]? {
+    private func parseAPIResponseJSON(_ jsonString: String) -> [Apartment]? {
         guard let jsonData = jsonString.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: jsonData) else {
             return nil
@@ -154,7 +159,7 @@ final class CianDataExtractor {
     }
 
     /// Recursively search any JSON value for an array of offer dicts (containing "bargainTerms").
-    private static func findOffersArray(in value: Any, depth: Int = 0) -> [[String: Any]] {
+    private func findOffersArray(in value: Any, depth: Int = 0) -> [[String: Any]] {
         guard depth < 6 else { return [] }
 
         if let array = value as? [[String: Any]] {
@@ -182,7 +187,7 @@ final class CianDataExtractor {
     }
 
     /// Parse a raw __NEXT_DATA__ JSON string (already extracted from the script tag).
-    private static func parseNextDataJSON(_ jsonString: String) -> [Apartment]? {
+    private func parseNextDataJSON(_ jsonString: String) -> [Apartment]? {
         guard let jsonData = jsonString.data(using: .utf8),
               let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             return nil
@@ -191,7 +196,7 @@ final class CianDataExtractor {
     }
 
     /// Extract __NEXT_DATA__ from full HTML via SwiftSoup, then parse.
-    private static func tryExtractFromJSON(_ html: String) -> [Apartment]? {
+    private func tryExtractFromJSON(_ html: String) -> [Apartment]? {
         do {
             let doc = try SwiftSoup.parse(html)
             guard let jsonTag = try doc.select("script#__NEXT_DATA__").first() else { return nil }
@@ -203,7 +208,7 @@ final class CianDataExtractor {
     }
 
     /// Navigate props → pageProps → initialState → offers → results and build Apartment objects.
-    private static func parseNextDataObject(_ jsonObject: [String: Any]) -> [Apartment]? {
+    private func parseNextDataObject(_ jsonObject: [String: Any]) -> [Apartment]? {
         guard let props = jsonObject["props"] as? [String: Any] else {
             print("⚠️ SEARCH JSON: нет 'props'"); return nil
         }
@@ -308,34 +313,31 @@ final class CianDataExtractor {
         return apartments.isEmpty ? nil : apartments
     }
 
-    // MARK: - HTML Extraction (Fallback) - переименованный старый метод
-    static func extractOffersFromHTML(from html: String) -> [Apartment] {
-        // Старый рабочий код
+    // MARK: - HTML Extraction (Fallback)
+    public func extractOffersFromHTML(from html: String) -> [Apartment] {
         return extractOffers(from: html)
     }
     
-    // Парсинг HTML карточек Cian через data-name атрибуты (стабильнее CSS-модульных классов)
-    static func extractOffers(from html: String) -> [Apartment] {
+    // Парсинг HTML карточек Cian через data-name атрибуты
+    public func extractOffers(from html: String) -> [Apartment] {
         var apartments: [Apartment] = []
 
         do {
+            let searchConfig = selectorsManager.config.search
             let doc: Document = try SwiftSoup.parse(html)
-            let cards = try doc.select("article")
+            let cards = try doc.select(searchConfig.cardSelector)
             var skippedNoLink = 0, skippedNoID = 0
 
             for card in cards {
-                // Link: programmatic filter to avoid SwiftSoup *='' selector quirks
-                let allLinks = try card.select("a[href]")
+                let allLinks = try card.select(searchConfig.linkSelector)
                 guard let linkEl = allLinks.first(where: {
-                    (try? $0.attr("href").contains("/flat/")) == true
+                    (try? $0.attr("href").contains(searchConfig.linkPattern)) == true
                 }) else { skippedNoLink += 1; continue }
                 let rawUrl = try linkEl.attr("href")
                 let url = rawUrl.hasPrefix("http") ? rawUrl : "https://www.cian.ru" + rawUrl
 
                 guard let id = extractID(from: url) else { skippedNoID += 1; continue }
 
-                // Walk all descendants with an explicit for loop — avoids SwiftSoup
-                // Elements.first{} ambiguity with its computed `first` property.
                 var title = ""
                 var priceText = ""
                 var geoLabels: [String] = []
@@ -343,25 +345,27 @@ final class CianDataExtractor {
 
                 for el in try card.select("*") {
                     guard el.hasAttr("data-name"), let dn = try? el.attr("data-name") else { continue }
-                    switch dn {
-                    case "TitleComponent", "OfferTitle":
+                    
+                    if searchConfig.titleKeys.contains(dn) {
                         if title.isEmpty { title = (try? el.text()) ?? "" }
-                    case "MainPrice":
-                        // Present before React hydration
-                        if priceText.isEmpty { priceText = (try? el.text()) ?? "" }
-                    case "ContentRow":
-                        // After hydration, MainPrice disappears but ContentRow with price remains.
-                        // Pick ContentRow whose text has "₽" but NOT "/м" (to exclude price-per-m²).
-                        if priceText.isEmpty, let t = try? el.text(),
-                           t.contains("₽"), !t.contains("/м") {
-                            priceText = t
+                    } else if searchConfig.priceKeys.contains(dn) {
+                        if priceText.isEmpty {
+                            if dn == "MainPrice" {
+                                priceText = (try? el.text()) ?? ""
+                            } else if dn == "ContentRow" {
+                                if let t = try? el.text(), t.contains("₽"), !t.contains("/м") {
+                                    priceText = t
+                                }
+                            } else {
+                                if let t = try? el.text(), t.contains("₽") {
+                                    priceText = t
+                                }
+                            }
                         }
-                    case "GeoLabel":
+                    } else if searchConfig.geoKeys.contains(dn) {
                         if let t = try? el.text() { geoLabels.append(t) }
-                    case "SpecialGeo":
+                    } else if searchConfig.metroKeys.contains(dn) {
                         if metroText.isEmpty { metroText = (try? el.text()) ?? "" }
-                    default:
-                        break
                     }
                 }
 
@@ -442,13 +446,13 @@ final class CianDataExtractor {
 
     
     // Вспомогательная функция для очистки цены
-    private static func cleanPrice(_ text: String) -> Int {
+    private func cleanPrice(_ text: String) -> Int {
         let digits = text.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         return Int(digits) ?? 0
     }
     
     // Вспомогательная функция для ID (регулярное выражение)
-    private static func extractID(from url: String) -> String? {
+    private func extractID(from url: String) -> String? {
         let pattern = "/flat/(\\d+)"
         if let regex = try? NSRegularExpression(pattern: pattern),
            let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) {
@@ -462,7 +466,7 @@ final class CianDataExtractor {
     // MARK: - Вспомогательные методы для безопасного приведения JSON-чисел
     
     /// Универсальный парсинг числа из JSON (Int, Double, NSNumber, String)
-    private static func extractNumber(_ value: Any?) -> Int? {
+    private func extractNumber(_ value: Any?) -> Int? {
         guard let value = value else { return nil }
         if let i = value as? Int { return i }
         if let d = value as? Double { return Int(d) }
@@ -475,11 +479,11 @@ final class CianDataExtractor {
         return nil
     }
     
-    private static func extractInt(_ value: Any?) -> Int? {
+    private func extractInt(_ value: Any?) -> Int? {
         return extractNumber(value)
     }
     
-    private static func extractDouble(_ value: Any?) -> Double? {
+    private func extractDouble(_ value: Any?) -> Double? {
         guard let value = value else { return nil }
         if let d = value as? Double { return d }
         if let i = value as? Int { return Double(i) }
@@ -491,7 +495,7 @@ final class CianDataExtractor {
     /// Detects studio and apartments (non-residential) flags from a JSON offer dict.
     /// Also detects paid promotion (placementType/promotionType fields).
     /// Called from both API and __NEXT_DATA__ parsers at search-result parse time.
-    private static func detectApartmentType(apartment: Apartment, item: [String: Any]) {
+    private func detectApartmentType(apartment: Apartment, item: [String: Any]) {
         let category = ((item["category"] as? String) ?? "").lowercased()
         let flatType  = ((item["flatType"]  as? String) ?? (item["objectType"] as? String) ?? "").lowercased()
 
@@ -521,7 +525,7 @@ final class CianDataExtractor {
     /// Extracts sellerType from a search-result JSON item.
     /// Cian encodes seller info in several possible paths — we check all of them.
     /// Values seen: "homeowner", "agent", "agency", "realtorAgency", "developer", etc.
-    private static func detectSellerType(apartment: Apartment, item: [String: Any]) {
+    private func detectSellerType(apartment: Apartment, item: [String: Any]) {
         // Path 1: item["user"]["userType"] (most common in __NEXT_DATA__)
         if let user = item["user"] as? [String: Any],
            let userType = user["userType"] as? String, !userType.isEmpty {
@@ -538,14 +542,6 @@ final class CianDataExtractor {
         if let t = (item["sellerType"] as? String) ?? (item["userType"] as? String), !t.isEmpty {
             apartment.sellerType = t
         }
-    }
-}
-
-// MARK: - SearchParserProtocol
-
-extension CianDataExtractor: SearchParserProtocol {
-    func extractData(from html: String) -> [Apartment] {
-        CianDataExtractor.extractData(from: html)
     }
 }
 

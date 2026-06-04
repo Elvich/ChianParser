@@ -5,19 +5,19 @@
 
 import Foundation
 
-protocol FlipAnalyzerProtocol {
+protocol FlipAnalyzerProtocol: Sendable {
     /// Analyze a single apartment given a pre-computed benchmark context.
-    func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult
+    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult
 
     /// Build a benchmark context from a collection of apartments using the target percentile (e.g. 0.8 for 80th percentile).
-    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
+    nonisolated func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
 
     /// Extract the Moscow okrug name from an address string (e.g. "ЮВАО", "ЦАО").
-    func extractOkrug(from address: String) -> String
+    nonisolated func extractOkrug(from address: String) -> String
 
     /// Extract the Moscow district (район) name from an address string (e.g. "Арбат", "Чертаново Северное").
     /// Returns nil when the address does not contain a "р-н …" fragment.
-    func extractDistrict(from address: String) -> String?
+    nonisolated func extractDistrict(from address: String) -> String?
 }
 
 /// Pre-computed market benchmark derived from a DB snapshot.
@@ -47,8 +47,14 @@ struct BenchmarkContext {
     /// When true, promoted apartments have their view counts penalized.
     let penalizePromotions: Bool
 
-    /// When true, uses the liquidity-optimized bell curve for Area scoring.
+    /// When true, normalizes views for morning parsing according to a non-linear distribution curve.
+    let extrapolateMorningViews: Bool
+
+    /// When enabled, uses the liquidity-optimized bell curve for Area scoring.
     let useLiquidityAreaScore: Bool
+
+    /// When true, Metro score (0-25) is replaced with a Views score based on demand level.
+    let useViewsScoreInsteadOfMetro: Bool
 
     /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
     let targetPercentile: Double
@@ -63,7 +69,9 @@ struct BenchmarkContext {
         useDistrictScore: Bool = false,
         benchmarkMode: BenchmarkMode = .okrug,
         penalizePromotions: Bool = true,
+        extrapolateMorningViews: Bool = true,
         useLiquidityAreaScore: Bool = false,
+        useViewsScoreInsteadOfMetro: Bool = false,
         targetPercentile: Double = 0.5
     ) {
         self.byOkrug = byOkrug
@@ -75,7 +83,9 @@ struct BenchmarkContext {
         self.useDistrictScore = useDistrictScore
         self.benchmarkMode = benchmarkMode
         self.penalizePromotions = penalizePromotions
+        self.extrapolateMorningViews = extrapolateMorningViews
         self.useLiquidityAreaScore = useLiquidityAreaScore
+        self.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
         self.targetPercentile = targetPercentile
     }
 

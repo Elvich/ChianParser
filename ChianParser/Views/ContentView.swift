@@ -59,11 +59,13 @@ struct ContentBody: View {
     @AppStorage("parserEnablePagination")  private var enablePagination: Bool = true
     @AppStorage("parserMaxPages")          private var maxPages: Int = 1
     @AppStorage("parserMode")              private var parserMode: ParsingMode = .parallel
-    @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = false
+    @AppStorage("parserRequireDetail")     private var requireDetailParsed: Bool = true
     @AppStorage("hideStudios")             private var hideStudios: Bool = false
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")      private var penalizePromotions: Bool = true
+    @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
     @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
+    @AppStorage("useViewsScoreInsteadOfMetro") private var useViewsScoreInsteadOfMetro: Bool = false
     @AppStorage("targetPercentile")        private var targetPercentile: Double = 0.5
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
@@ -101,23 +103,31 @@ struct ContentBody: View {
     private var coreView: some View {
         splitView
             .onChange(of: requireDetailParsed) { _, v in
-                viewModel.requireDetailParsed = v
+                viewModel.filterCoordinator.requireDetailParsed = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: hideStudios) { _, v in
-                viewModel.hideStudios = v
+                viewModel.filterCoordinator.hideStudios = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: hideApartments) { _, v in
-                viewModel.hideApartments = v
+                viewModel.filterCoordinator.hideApartments = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: penalizePromotions) { _, v in
                 viewModel.penalizePromotions = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
+            .onChange(of: extrapolateMorningViews) { _, v in
+                viewModel.extrapolateMorningViews = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
             .onChange(of: useLiquidityAreaScore) { _, v in
                 viewModel.useLiquidityAreaScore = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: useViewsScoreInsteadOfMetro) { _, v in
+                viewModel.useViewsScoreInsteadOfMetro = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: targetPercentile) { _, v in
@@ -125,15 +135,15 @@ struct ContentBody: View {
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: maxMetroDistance) { _, v in
-                viewModel.maxMetroDistance = v
+                viewModel.filterCoordinator.maxMetroDistance = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: metroWalkOnly) { _, v in
-                viewModel.metroWalkOnly = v
+                viewModel.filterCoordinator.metroWalkOnly = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: minBuildingFloors) { _, v in
-                viewModel.minBuildingFloors = v
+                viewModel.filterCoordinator.minBuildingFloors = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
     }
@@ -150,7 +160,7 @@ struct ContentBody: View {
         }
         .onChange(of: districtModeEnabled) { _, v in
             viewModel.useDistrictScore = v
-            viewModel.activeDistrictFilters = []
+            viewModel.filterCoordinator.activeDistrictFilters = []
             viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
         }
         .onChange(of: benchmarkMode) { _, v in
@@ -251,15 +261,17 @@ struct ContentBody: View {
         viewModel.enablePagination     = enablePagination
         viewModel.maxPages             = maxPages
         viewModel.parsingMode          = parserMode
-        viewModel.requireDetailParsed  = requireDetailParsed
-        viewModel.hideStudios          = hideStudios
-        viewModel.hideApartments       = hideApartments
+        viewModel.filterCoordinator.requireDetailParsed  = requireDetailParsed
+        viewModel.filterCoordinator.hideStudios          = hideStudios
+        viewModel.filterCoordinator.hideApartments       = hideApartments
         viewModel.penalizePromotions   = penalizePromotions
+        viewModel.extrapolateMorningViews = extrapolateMorningViews
         viewModel.useLiquidityAreaScore = useLiquidityAreaScore
+        viewModel.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
         viewModel.targetPercentile     = targetPercentile
-        viewModel.maxMetroDistance     = maxMetroDistance
-        viewModel.metroWalkOnly        = metroWalkOnly
-        viewModel.minBuildingFloors    = minBuildingFloors
+        viewModel.filterCoordinator.maxMetroDistance     = maxMetroDistance
+        viewModel.filterCoordinator.metroWalkOnly        = metroWalkOnly
+        viewModel.filterCoordinator.minBuildingFloors    = minBuildingFloors
         // Re-run scoring so all persisted settings take effect on first render
         viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
     }
@@ -285,12 +297,12 @@ struct ContentBody: View {
         .onChange(of: moderate)                      { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: market)                        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: hot)                           { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.showAuctions)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.activeRoomFilters)     { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
-        .onChange(of: viewModel.activeDistrictFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.activeStatusFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.activeOkrugFilters)  { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.showAuctions)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.activeRoomFilters)     { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.activeDistrictFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
 
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -590,6 +602,16 @@ private struct ApartmentRow: View {
                 HStack {
                     Text(apartment.title)
                         .font(.headline)
+                    if !apartment.isDetailedParsed {
+                        Text("Парсинг...")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.15))
+                            .foregroundColor(.blue)
+                            .cornerRadius(4)
+                            .help("Ожидает детального парсинга")
+                    }
                     if daysSinceLastSeen >= 7 {
                         Image(systemName: "eye.slash")
                             .font(.caption2)
@@ -645,6 +667,22 @@ private struct ApartmentRow: View {
                     }
                 }
                 .foregroundColor(.secondary)
+                
+                if let tags = apartment.semanticTags, !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag)
+                                    .font(.system(size: 9, weight: .medium))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.secondary.opacity(0.1))
+                                    .cornerRadius(4)
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
             }
             .padding(.leading, 8)
             .padding(.vertical, 4)
@@ -730,9 +768,9 @@ private struct RoomFilterBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(viewModel.availableRoomCounts, id: \.self) { bucket in
-                    let isActive = viewModel.activeRoomFilters.contains(bucket)
+                    let isActive = viewModel.filterCoordinator.activeRoomFilters.contains(bucket)
                     Button {
-                        viewModel.toggleRoomFilter(bucket)
+                        viewModel.filterCoordinator.toggleRoomFilter(bucket)
                     } label: {
                         Text(label(for: bucket))
                             .font(.caption.weight(.medium))
@@ -765,9 +803,9 @@ private struct DistrictFilterBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(viewModel.availableDistricts, id: \.self) { district in
-                    let isActive = viewModel.activeDistrictFilters.contains(district)
+                    let isActive = viewModel.filterCoordinator.activeDistrictFilters.contains(district)
                     Button {
-                        viewModel.toggleDistrictFilter(district)
+                        viewModel.filterCoordinator.toggleDistrictFilter(district)
                     } label: {
                         Text(district)
                             .font(.caption.weight(.medium))
@@ -800,9 +838,9 @@ private struct OkrugFilterBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(viewModel.availableOkrugs, id: \.self) { okrug in
-                    let isActive = viewModel.activeOkrugFilters.contains(okrug)
+                    let isActive = viewModel.filterCoordinator.activeOkrugFilters.contains(okrug)
                     Button {
-                        viewModel.toggleOkrugFilter(okrug)
+                        viewModel.filterCoordinator.toggleOkrugFilter(okrug)
                     } label: {
                         Text(okrug)
                             .font(.caption.weight(.medium))
@@ -835,9 +873,9 @@ private struct StatusFilterBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(ApartmentStatus.allCases.filter { $0 != .auction && $0 != .deposit }) { status in
-                    let isActive = viewModel.activeStatusFilters.contains(status)
+                    let isActive = viewModel.filterCoordinator.activeStatusFilters.contains(status)
                     Button {
-                        viewModel.toggleStatusFilter(status)
+                        viewModel.filterCoordinator.toggleStatusFilter(status)
                     } label: {
                         Label(status.label, systemImage: status.icon)
                             .font(.caption.weight(.medium))
@@ -856,16 +894,16 @@ private struct StatusFilterBar: View {
                 autoFlagChip(
                     label: "Аукционы",
                     icon: "hammer",
-                    isShown: viewModel.showAuctions,
+                    isShown: viewModel.filterCoordinator.showAuctions,
                     color: .brown
-                ) { viewModel.showAuctions.toggle() }
+                ) { viewModel.filterCoordinator.showAuctions.toggle() }
 
                 autoFlagChip(
                     label: "Залог",
                     icon: "banknote",
-                    isShown: viewModel.showDeposits,
+                    isShown: viewModel.filterCoordinator.showDeposits,
                     color: .teal
-                ) { viewModel.showDeposits.toggle() }
+                ) { viewModel.filterCoordinator.showDeposits.toggle() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

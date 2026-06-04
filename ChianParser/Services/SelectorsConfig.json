@@ -1,0 +1,53 @@
+{
+  "search": {
+    "cardSelector": "article",
+    "linkSelector": "a[href]",
+    "linkPattern": "/flat/",
+    "titleKeys": ["TitleComponent", "OfferTitle"],
+    "priceKeys": ["MainPrice", "ContentRow"],
+    "geoKeys": ["GeoLabel"],
+    "metroKeys": ["SpecialGeo"]
+  },
+  "detail": {
+    "jsonSelectors": [
+      "script#__NEXT_DATA__",
+      "script[type='application/json']",
+      "script[id*='__']",
+      "script:containsData(offerData)",
+      "script:containsData(cianAd)"
+    ],
+    "mainCharacteristicsSelectors": [
+      "[data-name='OfferSummaryInfoItem']",
+      "[data-testid='object-summary-info-item']",
+      ".a10a3f92e9--item--_ipjK",
+      "[class*='item']"
+    ],
+    "mainCharacteristicsTitleSelector": "[data-mark='OfferSummaryInfoItem/Title']",
+    "mainCharacteristicsValueSelector": "[data-mark='OfferSummaryInfoItem/Value']",
+    "alternativeCharacteristicsSelectors": "[data-name='GeneralInformation'] li, [data-name='AboutFlatItem'], .object_descr_params li",
+    "descriptionSelectors": [
+      "[data-name='Description']",
+      "[itemprop='description']",
+      ".description_text",
+      "[class*='description']"
+    ],
+    "addressSelectors": [
+      "[data-name='Geo']",
+      "[itemprop='address']",
+      "[class*='address']",
+      "h1[itemprop='name']"
+    ],
+    "metroSelectors": [
+      "[data-name='UndergroundStation']",
+      "[class*='underground']",
+      "[class*='metro']",
+      "a[href*='metro']"
+    ],
+    "sellerSelectors": [
+      "[data-automation='agent-info']",
+      "[data-automation='seller-info']",
+      "[class*='--agent-info--']",
+      "[class*='--owner-info--']"
+    ]
+  }
+}

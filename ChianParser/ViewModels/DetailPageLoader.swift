@@ -10,6 +10,7 @@
 import Foundation
 import WebKit
 import Observation
+import UserNotifications
 
 @MainActor
 @Observable
@@ -195,6 +196,28 @@ extension DetailPageLoader: WKNavigationDelegate {
             if captchaResult {
                 captchaDetected = true
                 statusMessage = "⚠️ Капча! Решите её в браузере — парсинг продолжится автоматически"
+                
+                // Trigger a macOS system notification for Captcha detection
+                let content = UNMutableNotificationContent()
+                content.title = "⚠️ Cian Captcha Detected"
+                content.body = "A captcha has been encountered during detailed parsing. Please open ChianParser and solve the captcha in the browser."
+                content.sound = .default
+                
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+                let request = UNNotificationRequest(
+                    identifier: "CianCaptchaNotification-\(Date().timeIntervalSince1970)",
+                    content: content,
+                    trigger: trigger
+                )
+                
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let error = error {
+                        print("❌ Failed to send captcha notification: \(error.localizedDescription)")
+                    } else {
+                        print("✅ Captcha desktop notification sent successfully.")
+                    }
+                }
+                
                 // Don't proceed — wait for next didFinish after user solves captcha
                 return
             }
