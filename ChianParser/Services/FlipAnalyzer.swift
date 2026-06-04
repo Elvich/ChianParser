@@ -122,7 +122,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm)
         
-        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions)
+        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions, extrapolateMorningViews: benchmark.extrapolateMorningViews)
         
         let metroScore: Int
         if benchmark.useViewsScoreInsteadOfMetro {
@@ -276,7 +276,7 @@ private extension FlipAnalyzer {
     }
 
     /// Demand computation from views/day.
-    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool) -> (DemandLevel, Double?) {
+    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true) -> (DemandLevel, Double?) {
         var rawPerDay: Double? = nil
         
         // 1. Приоритет: честная дельта (rolling window) за последние N часов
@@ -294,7 +294,7 @@ private extension FlipAnalyzer {
 
         // 2. Фолбэк 1: Просмотры "за сегодня" (от Циана)
         if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
-            if benchmark.extrapolateMorningViews {
+            if extrapolateMorningViews {
                 let hour = Calendar.current.component(.hour, from: Date())
                 
                 // Cumulative percentage of daily views by hour (approximate curve)

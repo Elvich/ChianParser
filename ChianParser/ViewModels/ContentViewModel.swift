@@ -493,7 +493,7 @@ final class ContentViewModel {
         }
         
         let moderate = candidates.filter { apt in
-            if let score = cachedScores[apt.id] {
+            if let score = cachedScores.first(where: { $0.0.id == apt.id })?.1 {
                 // Перепарсиваем moderate и market (так как они близки к топу)
                 return score.demandLevel == .moderate || score.demandLevel == .market
             }
