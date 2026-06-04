@@ -19,7 +19,7 @@ final class FlipAnalyzer: @unchecked Sendable {}
 
 extension FlipAnalyzer: FlipAnalyzerProtocol {
 
-    nonisolated func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext {
+    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext {
         var okrugGroups: [String: [Double]] = [:]
         var districtGroups: [String: [Double]] = [:]
         var metroGroups: [String: [Double]] = [:]

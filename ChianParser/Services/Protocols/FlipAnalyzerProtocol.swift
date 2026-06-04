@@ -10,7 +10,7 @@ protocol FlipAnalyzerProtocol: Sendable {
     nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult
 
     /// Build a benchmark context from a collection of apartments using the target percentile (e.g. 0.8 for 80th percentile).
-    nonisolated func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
+    func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
 
     /// Extract the Moscow okrug name from an address string (e.g. "ЮВАО", "ЦАО").
     nonisolated func extractOkrug(from address: String) -> String
