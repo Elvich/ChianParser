@@ -23,11 +23,12 @@ jobs:
 
       # 3. Разрешение зависимостей (Swift Package Manager)
       - name: Resolve Swift Packages
-        run: xcodebuild -resolvePackageDependencies
-
+        working-directory: App
+        run: xcodebuild -resolvePackageDependencies -project "ChianParser.xcodeproj"
 
       # 4. Сборка и прогон тестов
       - name: Build and Test
+        working-directory: App
         run: |
           xcodebuild clean build test \
             -project "ChianParser.xcodeproj" \

@@ -78,18 +78,31 @@ fastlane/test_output
 
 iOSInjectionProject/
 
-# AI and Local Documentation
-CLAUDE.md
-GEMINI.md
-ChianParser/DEBUG_PARSING.md
-ChianParser/PARSING_GUIDE.md
-SCRAPING_STRATEGY.md
-WEB_STRUCTURE_OFFER.md
-WEB_STRUCTURE_SEARCH.md
+# AI and Local Documentation (development-only, not committed)
+Docs/CLAUDE.md
+Docs/GEMINI.md
+Docs/DEBUG_PARSING.md
+Docs/PARSING_GUIDE.md
+Docs/SCRAPING_STRATEGY.md
+Docs/WEB_STRUCTURE_OFFER.md
+Docs/WEB_STRUCTURE_SEARCH.md
+Docs/design_handoff_chianparser/
 
-# Generated Artifacts & Design Files
-ChianParser_Installer.dmg
-design_handoff_chianparser/
+# Generated Artifacts
+App/tmp_build/
+App/*.dmg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Environment secrets
+.env
+.env.*
+
+# Sparkle signing key — keep in Keychain, never commit
+.sparkle_private_key
 
 # macOS / OS X
 .DS_Store

@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ../Backend
+      dockerfile: ../Infrastructure/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://chian:chian@db:5432/chianparser
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chian
+      POSTGRES_PASSWORD: chian
+      POSTGRES_DB: chianparser
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chian -d chianparser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
