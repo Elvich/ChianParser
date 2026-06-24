@@ -1,4 +1,4 @@
-# ChianParser 🏢
+# ChianParser
 
 **ChianParser** — это мощный инструмент для парсинга и анализа объектов недвижимости с сайта Cian.ru. Проект включает в себя нативное приложение для macOS/iOS на Swift и серверную часть (Backend) на Python (FastAPI), управляющую обновлениями.
 
@@ -24,7 +24,7 @@
 - **Фреймворк**: FastAPI
 - **База данных**: PostgreSQL (SQLAlchemy + asyncpg)
 
-## 🚀 Установка и запуск
+## Установка и запуск
 
 ### Запуск приложения (macOS/iOS)
 1. Откройте `App/ChianParser.xcodeproj` в Xcode.
