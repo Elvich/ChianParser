@@ -10,7 +10,7 @@ on:
 jobs:
   build_sign_deploy:
     name: Сборка, подпись и авто-деплой DMG в прод
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       # 1. Клонирование репозитория
@@ -21,7 +21,11 @@ jobs:
       - name: Setup Xcode version
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.4'
+          xcode-version: latest-stable
+
+      # 2.3 Установка Metal Toolchain (требуется для компиляции mlx-swift на macOS 15)
+      - name: Install Metal Toolchain
+        run: sudo xcodebuild -downloadComponent MetalToolchain
 
 
 
