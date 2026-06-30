@@ -8,7 +8,7 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: macos-latest # Использует последнюю доступную версию macOS
+    runs-on: macos-14
 
     steps:
       # 1. Клонирование репозитория
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Xcode version
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '15.4'
 
 
 

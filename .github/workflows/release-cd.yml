@@ -10,7 +10,7 @@ on:
 jobs:
   build_sign_deploy:
     name: Сборка, подпись и авто-деплой DMG в прод
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       # 1. Клонирование репозитория
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Xcode version
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '15.4'
 
 
 
