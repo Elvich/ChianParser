@@ -70,16 +70,15 @@ hdiutil create -volname "$APP_NAME" \
                "$DMG_NAME"
 
 rm -rf "$DMG_STAGING"
-rm -rf "$BUILD_DIR"
 
 # ---------------------------------------------------------------------------
 # Step 5: Sign with Sparkle (sign_update)
 # ---------------------------------------------------------------------------
 echo "🔏 Signing with Sparkle EdDSA..."
 
-SIGN_UPDATE=$(find ~/Library/Developer/Xcode/DerivedData \
+SIGN_UPDATE=$(find "$SCRIPT_DIR/build" ~/Library/Developer/Xcode/DerivedData \
     -path "*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-    -type f 2>/dev/null | head -n 1)
+    -type f 2>/dev/null | head -n 1 || true)
 
 if [ -z "$SIGN_UPDATE" ]; then
     echo "⚠️  sign_update not found in DerivedData — build the project in Xcode first."
@@ -144,3 +143,6 @@ echo -e "${GREEN}  version      = \"${BUILD_NUMBER}\"          # sparkle:version
 echo -e "${GREEN}  short_version= \"${SHORT_VERSION}\"         # sparkle:shortVersionString${RESET}"
 echo -e "${GREEN}  dmg          = ${DMG_NAME}${RESET}"
 echo ""
+
+# Clean up build directory now that we are done signing
+rm -rf "$SCRIPT_DIR/build"
