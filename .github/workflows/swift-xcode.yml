@@ -15,18 +15,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Выбор версии Xcode (опционально: по умолчанию используется самая свежая)
+      # 2. Выбор версии Xcode
       - name: Setup Xcode version
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+
+      # 2.5 Кэширование SPM зависимостей для ускорения сборки
+      - name: Cache Swift Package Manager Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('App/ChianParser.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       # 3. Разрешение зависимостей (Swift Package Manager)
       - name: Resolve Swift Packages
         working-directory: App
         run: xcodebuild -resolvePackageDependencies -project "ChianParser.xcodeproj"
 
-      # 4. Сборка и прогон тестов
+      # 4. Сборка и прогон тестов (Unit- и UI-тестов)
       - name: Build and Test
         working-directory: App
         run: |

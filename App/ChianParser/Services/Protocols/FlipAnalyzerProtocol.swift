@@ -59,6 +59,12 @@ struct BenchmarkContext {
     /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
     let targetPercentile: Double
 
+    /// Configurable score weights
+    let priceScoreWeight: Int
+    let metroProximityWeight: Int
+    let locationFloorWeight: Int
+    let areaScoreWeight: Int
+
     init(
         byOkrug: [String: OkrugBenchmark],
         byDistrict: [String: OkrugBenchmark] = [:],
@@ -72,7 +78,11 @@ struct BenchmarkContext {
         extrapolateMorningViews: Bool = true,
         useLiquidityAreaScore: Bool = false,
         useViewsScoreInsteadOfMetro: Bool = false,
-        targetPercentile: Double = 0.5
+        targetPercentile: Double = 0.5,
+        priceScoreWeight: Int = 40,
+        metroProximityWeight: Int = 25,
+        locationFloorWeight: Int = 20,
+        areaScoreWeight: Int = 15
     ) {
         self.byOkrug = byOkrug
         self.byDistrict = byDistrict
@@ -87,9 +97,21 @@ struct BenchmarkContext {
         self.useLiquidityAreaScore = useLiquidityAreaScore
         self.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
         self.targetPercentile = targetPercentile
+        self.priceScoreWeight = priceScoreWeight
+        self.metroProximityWeight = metroProximityWeight
+        self.locationFloorWeight = locationFloorWeight
+        self.areaScoreWeight = areaScoreWeight
     }
 
-    static let empty = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+    static let empty = BenchmarkContext(
+        byOkrug: [:],
+        globalMedian: nil,
+        globalSampleSize: 0,
+        priceScoreWeight: 40,
+        metroProximityWeight: 25,
+        locationFloorWeight: 20,
+        areaScoreWeight: 15
+    )
 }
 
 enum BenchmarkMode: String {

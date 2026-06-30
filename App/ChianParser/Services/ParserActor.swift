@@ -48,14 +48,26 @@ actor ParserActor {
         var updatedCount = 0
         var newlyInsertedIDs: [PersistentIdentifier] = []
         
+        let config = modelContext.fetchOrCreateScoringConfiguration()
         let analyzer = FlipAnalyzer()
         
         for apartment in foundApartments {
+            if config.excludeStudios && apartment.isStudio {
+                continue
+            }
+            if config.excludeApartments && apartment.isApartments {
+                continue
+            }
+            
             autoreleasepool {
                 let id = apartment.id
                 let fetchDescriptor = FetchDescriptor<Apartment>(predicate: #Predicate { $0.id == id })
                 
                 if let existing = try? modelContext.fetch(fetchDescriptor).first {
+                    if (config.excludeStudios && existing.isStudio) || (config.excludeApartments && existing.isApartments) {
+                        modelContext.delete(existing)
+                        return
+                    }
                     if updateExistingApartment(existing, with: apartment) {
                         updatedCount += 1
                     }

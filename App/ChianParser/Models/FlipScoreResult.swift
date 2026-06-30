@@ -109,22 +109,28 @@ struct FlipScoreResult {
     let totalScore: Int
 
     // Component scores
-    let priceScore: Int     // max 40 — discount vs benchmark
-    let metroScore: Int     // max 25 — proximity to metro
-    let locationScore: Int  // max 20 — floor position (default) or district rank (district mode)
-    let isDistrictScore: Bool // true when locationScore reflects district ranking
-    let areaScore: Int      // max 15 — apartment area
-    let sellerBonus: Int    // +3 if agent/agency/developer, 0 if owner or unknown
+    let priceScore: Int
+    let metroScore: Int
+    let locationScore: Int
+    let isDistrictScore: Bool
+    let areaScore: Int
+    let sellerBonus: Int
 
     // Benchmark context
-    let priceSqm: Double?        // calculated price per m² for this apartment
-    let benchmarkSqm: Double?    // median price/m² from DB for this okrug
-    let benchmarkOkrug: String?  // which okrug was used for benchmark
-    let benchmarkSampleSize: Int // how many apartments were in the benchmark
+    let priceSqm: Double?
+    let benchmarkSqm: Double?
+    let benchmarkOkrug: String?
+    let benchmarkSampleSize: Int
 
     // Demand (separate from intrinsic score)
     let demandLevel: DemandLevel
-    let viewsPerDay: Double?     // computed views/day
+    let viewsPerDay: Double?
+
+    // Max values (for dynamic progress displaying in UI)
+    let maxPriceScore: Int
+    let maxMetroScore: Int
+    let maxLocationScore: Int
+    let maxAreaScore: Int
 
     var grade: FlipGrade { FlipGrade(score: totalScore) }
 
@@ -132,5 +138,43 @@ struct FlipScoreResult {
     var priceDiscount: Double? {
         guard let priceSqm, let benchmarkSqm, benchmarkSqm > 0 else { return nil }
         return (priceSqm - benchmarkSqm) / benchmarkSqm
+    }
+
+    init(
+        totalScore: Int,
+        priceScore: Int,
+        metroScore: Int,
+        locationScore: Int,
+        isDistrictScore: Bool,
+        areaScore: Int,
+        sellerBonus: Int,
+        priceSqm: Double?,
+        benchmarkSqm: Double?,
+        benchmarkOkrug: String?,
+        benchmarkSampleSize: Int,
+        demandLevel: DemandLevel,
+        viewsPerDay: Double?,
+        maxPriceScore: Int = 40,
+        maxMetroScore: Int = 25,
+        maxLocationScore: Int = 20,
+        maxAreaScore: Int = 15
+    ) {
+        self.totalScore = totalScore
+        self.priceScore = priceScore
+        self.metroScore = metroScore
+        self.locationScore = locationScore
+        self.isDistrictScore = isDistrictScore
+        self.areaScore = areaScore
+        self.sellerBonus = sellerBonus
+        self.priceSqm = priceSqm
+        self.benchmarkSqm = benchmarkSqm
+        self.benchmarkOkrug = benchmarkOkrug
+        self.benchmarkSampleSize = benchmarkSampleSize
+        self.demandLevel = demandLevel
+        self.viewsPerDay = viewsPerDay
+        self.maxPriceScore = maxPriceScore
+        self.maxMetroScore = maxMetroScore
+        self.maxLocationScore = maxLocationScore
+        self.maxAreaScore = maxAreaScore
     }
 }

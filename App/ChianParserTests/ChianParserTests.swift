@@ -5,6 +5,7 @@
 
 import Foundation
 import Testing
+import SwiftData
 @testable import ChianParser
 
 // MARK: - FlipAnalyzer: Scoring
@@ -583,5 +584,84 @@ struct FilterCoordinatorTests {
         #expect(coordinator.shouldKeep(apartment: studio, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
         #expect(coordinator.shouldKeep(apartment: room1, metroBanlist: [], districtScores: [:], useDistrictScore: false) == true)
         #expect(coordinator.shouldKeep(apartment: room3, metroBanlist: [], districtScores: [:], useDistrictScore: false) == false)
+    }
+}
+
+// MARK: - ScoringConfiguration Tests
+
+@Suite("ScoringConfiguration & DB Exclusions")
+@MainActor
+struct ScoringConfigurationTests {
+    
+    private func createInMemoryContext() throws -> ModelContext {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Apartment.self, PricePoint.self, ScoringConfiguration.self, configurations: config)
+        return ModelContext(container)
+    }
+
+    @Test("Default ScoringConfiguration is seeded correctly")
+    func testDefaultConfigSeeding() throws {
+        let context = try createInMemoryContext()
+        let config = context.fetchOrCreateScoringConfiguration()
+        
+        #expect(config.priceScoreWeight == 40)
+        #expect(config.metroProximityWeight == 25)
+        #expect(config.locationFloorWeight == 20)
+        #expect(config.areaScoreWeight == 15)
+        #expect(config.excludeStudios == true)
+        #expect(config.excludeApartments == true)
+        
+        // Secondary fetch returns the same instance
+        let secondConfig = context.fetchOrCreateScoringConfiguration()
+        #expect(config.id == secondConfig.id)
+    }
+}
+
+// MARK: - FlipAnalyzer: Dynamic Weights Tests
+
+@Suite("FlipAnalyzer — Dynamic Weights")
+@MainActor
+struct FlipAnalyzerWeightsTests {
+    let analyzer = FlipAnalyzer()
+    let thresholds = DemandThresholds.default
+
+    @Test("Calculates price score using custom weights")
+    func testCustomPriceWeight() {
+        let apt = Apartment(id: "1", title: "Test", price: 5_000_000, url: "", address: "Москва, ЦАО")
+        apt.area = 50 // 100k/m²
+        
+        // Case 1: weight is 50
+        let benchmark1 = BenchmarkContext(
+            byOkrug: ["ЦАО": OkrugBenchmark(medianPriceSqm: 200_000, sampleSize: 10, okrug: "ЦАО")],
+            globalMedian: 200_000,
+            globalSampleSize: 10,
+            priceScoreWeight: 50
+        )
+        let result1 = analyzer.analyze(apartment: apt, benchmark: benchmark1, thresholds: thresholds)
+        #expect(result1.priceScore == 50)
+        #expect(result1.maxPriceScore == 50)
+
+        // Case 2: weight is 20
+        let benchmark2 = BenchmarkContext(
+            byOkrug: ["ЦАО": OkrugBenchmark(medianPriceSqm: 200_000, sampleSize: 10, okrug: "ЦАО")],
+            globalMedian: 200_000,
+            globalSampleSize: 10,
+            priceScoreWeight: 20
+        )
+        let result2 = analyzer.analyze(apartment: apt, benchmark: benchmark2, thresholds: thresholds)
+        #expect(result2.priceScore == 20)
+        #expect(result2.maxPriceScore == 20)
+    }
+
+    @Test("Calculates metro score using custom weights")
+    func testCustomMetroWeight() {
+        let apt = Apartment(id: "1", title: "Test", price: 10_000_000, url: "", address: "Москва")
+        apt.metroDistance = 4
+        apt.metroTransportType = "walk"
+        
+        let benchmark1 = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, metroProximityWeight: 30)
+        let result1 = analyzer.analyze(apartment: apt, benchmark: benchmark1, thresholds: thresholds)
+        #expect(result1.metroScore == 30)
+        #expect(result1.maxMetroScore == 30)
     }
 }

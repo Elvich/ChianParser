@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftSoup
+import SwiftData
 
 final class CianDetailParser: @unchecked Sendable {
     
@@ -33,6 +34,17 @@ final class CianDetailParser: @unchecked Sendable {
             generateBasicTags(for: apartment)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
+            
+            if let context = apartment.modelContext {
+                let config = context.fetchOrCreateScoringConfiguration()
+                if (config.excludeStudios && apartment.isStudio) || (config.excludeApartments && apartment.isApartments) {
+                    print("🗑️ [Detail] Удаляем отфильтрованную квартиру (тип не подходит): \(apartment.id)")
+                    context.delete(apartment)
+                    try? context.save()
+                    return
+                }
+            }
+            
             print("✅ [Detail] \(apartment.id) цена=\(apartment.price) площадь=\(apartment.area.map { String($0) } ?? "?") метро=\(apartment.metro ?? "?")")
         } else {
             print("⚠️ [Detail] \(apartment.id) — не удалось распарсить JSON")
@@ -85,6 +97,16 @@ final class CianDetailParser: @unchecked Sendable {
             generateBasicTags(for: apartment)
             apartment.isDetailedParsed = true
             apartment.lastUpdate = Date()
+            
+            if let context = apartment.modelContext {
+                let config = context.fetchOrCreateScoringConfiguration()
+                if (config.excludeStudios && apartment.isStudio) || (config.excludeApartments && apartment.isApartments) {
+                    print("🗑️ [Detail/HTML] Удаляем отфильтрованную квартиру (тип не подходит): \(apartment.id)")
+                    context.delete(apartment)
+                    try? context.save()
+                    return
+                }
+            }
             
             print("✅ [Detail/HTML] \(apartment.id) цена=\(apartment.price) площадь=\(apartment.area.map { String($0) } ?? "?") метро=\(apartment.metro ?? "?")")
             

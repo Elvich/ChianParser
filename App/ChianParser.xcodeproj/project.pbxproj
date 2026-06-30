@@ -467,7 +467,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
 				INFOPLIST_KEY_SUFeedURL = "https://flipping.elvi4.tech/api/v1/updates/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "xpHX9DuwDafSHPtGx+Ms8O5Os+dL8/3uK6EDWa5d0k0=";
+				INFOPLIST_KEY_SUPublicEDKey = "j7+NThBHvb88YNnIG0DPpgQU2dcO1QZ2BNj8w88OBTc=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -517,7 +517,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
 				INFOPLIST_KEY_SUFeedURL = "https://flipping.elvi4.tech/api/v1/updates/appcast.xml";
-				INFOPLIST_KEY_SUPublicEDKey = "xpHX9DuwDafSHPtGx+Ms8O5Os+dL8/3uK6EDWa5d0k0=";
+				INFOPLIST_KEY_SUPublicEDKey = "j7+NThBHvb88YNnIG0DPpgQU2dcO1QZ2BNj8w88OBTc=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

@@ -108,11 +108,7 @@ final class ContentViewModel {
     /// When true, Metro score (0-25) is replaced with a Views score based on demand level.
     var useViewsScoreInsteadOfMetro: Bool = false
 
-    /// When enabled, uses the liquidity-optimized bell curve for Area scoring.
-    var useLiquidityAreaScore: Bool = false
 
-    /// The target percentile used to calculate the benchmark (e.g., 0.8 for upper market).
-    var targetPercentile: Double = 0.5
 
     /// Apartments not seen in search for this many days are considered stale.
     var staleDaysThreshold: Int = 3
@@ -193,11 +189,10 @@ final class ContentViewModel {
         }
     }
 
-    /// Rebuild the score cache synchronously. Prefer scheduleRefresh for UI-triggered calls.
     func refreshScores(from apartments: [Apartment], thresholds: DemandThresholds, metroBanlist: Set<String>) {
-        // Build benchmark from ALL apartments (not just visible ones) for accurate pricing,
-        // then enrich with district scoring settings from ContentViewModel.
-        let base = flipAnalyzer.buildBenchmark(from: apartments, targetPercentile: targetPercentile)
+        let config = modelContext.fetchOrCreateScoringConfiguration()
+        let targetPercentileToUse = config.isPercentileBenchmarkEnabled ? config.targetPercentile : 0.50
+        let base = flipAnalyzer.buildBenchmark(from: apartments, targetPercentile: targetPercentileToUse)
         let benchmark = BenchmarkContext(
             byOkrug: base.byOkrug,
             byDistrict: base.byDistrict,
@@ -209,9 +204,13 @@ final class ContentViewModel {
             benchmarkMode: benchmarkMode,
             penalizePromotions: penalizePromotions,
             extrapolateMorningViews: extrapolateMorningViews,
-            useLiquidityAreaScore: useLiquidityAreaScore,
+            useLiquidityAreaScore: config.isCustomAreaScoreEnabled,
             useViewsScoreInsteadOfMetro: useViewsScoreInsteadOfMetro,
-            targetPercentile: targetPercentile
+            targetPercentile: targetPercentileToUse,
+            priceScoreWeight: config.priceScoreWeight,
+            metroProximityWeight: config.metroProximityWeight,
+            locationFloorWeight: config.locationFloorWeight,
+            areaScoreWeight: config.areaScoreWeight
         )
 
         // Check waiting conditions — may update apartment.status (MainActor-safe)
@@ -240,6 +239,9 @@ final class ContentViewModel {
 
         // Score and filter
         let pairs = apartments.compactMap { apt -> (Apartment, FlipScoreResult)? in
+            if config.excludeStudios && apt.isStudio { return nil }
+            if config.excludeApartments && apt.isApartments { return nil }
+            
             guard filterCoordinator.shouldKeep(
                 apartment: apt,
                 metroBanlist: metroBanlist,
@@ -401,9 +403,12 @@ final class ContentViewModel {
 
         log = "🔍 Анализ данных (JSON → HTML fallback)..."
 
+        let config = modelContext.fetchOrCreateScoringConfiguration()
+        let targetPercentileToUse = config.isPercentileBenchmarkEnabled ? config.targetPercentile : 0.50
+
         Task {
             do {
-                let result = try await parserActor.parseAndSaveSearchPage(receivedString, targetPercentile: targetPercentile)
+                let result = try await parserActor.parseAndSaveSearchPage(receivedString, targetPercentile: targetPercentileToUse)
                 
                 guard result.totalCount > 0 else {
                     log = "⚠️ Квартиры не найдены. Возможно, блокировка или капча."

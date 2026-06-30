@@ -120,20 +120,21 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             sampleSize = okrugBM?.sampleSize ?? benchmark.globalSampleSize
         }
 
-        let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm)
+        let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm, benchmark: benchmark)
         
         let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions, extrapolateMorningViews: benchmark.extrapolateMorningViews)
         
         let metroScore: Int
         if benchmark.useViewsScoreInsteadOfMetro {
+            let maxWeight = benchmark.metroProximityWeight
             switch demandLevel {
-            case .hot:      metroScore = 25
-            case .market:   metroScore = 15
-            case .moderate: metroScore = 5
+            case .hot:      metroScore = maxWeight
+            case .market:   metroScore = Int(Double(maxWeight) * 0.60)
+            case .moderate: metroScore = Int(Double(maxWeight) * 0.20)
             default:        metroScore = 0
             }
         } else {
-            metroScore = computeMetroScore(apartment: apartment)
+            metroScore = computeMetroScore(apartment: apartment, benchmark: benchmark)
         }
         
         let (locationScore, isDistrictScore) = computeLocationScore(apartment: apartment, benchmark: benchmark)
@@ -164,95 +165,98 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
 private extension FlipAnalyzer {
 
-    /// Price score: max 40 pts.
-    /// Discount bands: ≥25% off → 40, ≥15% → 32, ≥10% → 24, ≥5% → 16, 0% → 8, premium → 0.
-    nonisolated func computePriceScore(priceSqm: Double?, benchmarkSqm: Double?) -> Int {
-        guard let priceSqm, let benchmarkSqm, benchmarkSqm > 0 else { return 6 }
+    /// Price score: max priceScoreWeight (default 40 pts).
+    nonisolated func computePriceScore(priceSqm: Double?, benchmarkSqm: Double?, benchmark: BenchmarkContext) -> Int {
+        let maxWeight = benchmark.priceScoreWeight
+        guard let priceSqm, let benchmarkSqm, benchmarkSqm > 0 else {
+            return Int(Double(maxWeight) * 0.15)
+        }
         let discount = (benchmarkSqm - priceSqm) / benchmarkSqm
         switch discount {
-        case 0.25...: return 40
-        case 0.15...: return 32
-        case 0.10...: return 24
-        case 0.05...: return 16
-        case 0.0...:  return 8
+        case 0.25...: return maxWeight
+        case 0.15...: return Int(Double(maxWeight) * 0.80)
+        case 0.10...: return Int(Double(maxWeight) * 0.60)
+        case 0.05...: return Int(Double(maxWeight) * 0.40)
+        case 0.0...:  return Int(Double(maxWeight) * 0.20)
         default:      return 0
         }
     }
 
-    /// Metro score: max 25 pts.
-    /// Walk ≤5 min → 25, walk ≤10 → 20, walk ≤15 → 15, walk ≤20 → 10,
-    /// transport ≤10 → 13, transport ≤20 → 8, no data → 0.
-    nonisolated func computeMetroScore(apartment: Apartment) -> Int {
+    /// Metro score: max metroProximityWeight (default 25 pts).
+    nonisolated func computeMetroScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
         guard let distance = apartment.metroDistance, distance > 0 else { return 0 }
         let isWalk = apartment.metroTransportType == "walk"
+        let maxWeight = benchmark.metroProximityWeight
         if isWalk {
             switch distance {
-            case ...5:  return 25
-            case ...10: return 20
-            case ...15: return 15
-            case ...20: return 10
-            default:    return 5
+            case ...5:  return maxWeight
+            case ...10: return Int(Double(maxWeight) * 0.80)
+            case ...15: return Int(Double(maxWeight) * 0.60)
+            case ...20: return Int(Double(maxWeight) * 0.40)
+            default:    return Int(Double(maxWeight) * 0.20)
             }
         } else {
             switch distance {
-            case ...10: return 13
-            case ...20: return 8
-            default:    return 3
+            case ...10: return Int(Double(maxWeight) * 0.52)
+            case ...20: return Int(Double(maxWeight) * 0.32)
+            default:    return Int(Double(maxWeight) * 0.12)
             }
         }
     }
 
-    /// Location score: max 20 pts.
-    /// District mode ON  — reads score directly from benchmark.districtScores (0…20), neutral 7 if unknown.
-    /// District mode OFF — floor position (1st floor → 0, last → 5, near-last → 13, other → 20).
+    /// Location score: max locationFloorWeight (default 20 pts).
     nonisolated func computeLocationScore(apartment: Apartment, benchmark: BenchmarkContext) -> (score: Int, isDistrict: Bool) {
+        let maxWeight = benchmark.locationFloorWeight
         guard benchmark.useDistrictScore else {
-            return (computeFloorScore(apartment: apartment), false)
+            return (computeFloorScore(apartment: apartment, benchmark: benchmark), false)
         }
         // District mode ON: look up the explicit score for this district
         if let district = apartment.district,
            let score = benchmark.districtScores[district],
            score >= 0 {
-            return (min(score, 20), true)
+            let scaledScore = Int(Double(score) * (Double(maxWeight) / 20.0))
+            return (min(scaledScore, maxWeight), true)
         }
-        return (7, true)  // No district data or district not in table — neutral score
+        return (Int(Double(maxWeight) * 0.35), true)
     }
 
-    /// Floor score (used in default mode): max 20 pts.
-    nonisolated func computeFloorScore(apartment: Apartment) -> Int {
-        guard let floor = apartment.floor, let total = apartment.totalFloors, total > 0 else { return 7 }
+    /// Floor score: max locationFloorWeight (default 20 pts).
+    nonisolated func computeFloorScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
+        let maxWeight = benchmark.locationFloorWeight
+        guard let floor = apartment.floor, let total = apartment.totalFloors, total > 0 else {
+            return Int(Double(maxWeight) * 0.35)
+        }
         if floor == 1         { return 0 }
-        if floor == total     { return 2 } // Pessimize top floor strongly
-        if floor == total - 1 { return 13 }
-        return 20
+        if floor == total     { return Int(Double(maxWeight) * 0.10) }
+        if floor == total - 1 { return Int(Double(maxWeight) * 0.65) }
+        return maxWeight
     }
 
-    /// Area score: max 15 pts.
-    /// Liquidity mode (bell curve): 35-50 → 15, 25-35 → 11, 51-70 → 6, else → 2.
-    /// Default mode (linear): ≥60 → 15, ≥45 → 11, ≥30 → 6, <30 → 2.
+    /// Area score: max areaScoreWeight (default 15 pts).
     nonisolated func computeAreaScore(apartment: Apartment, benchmark: BenchmarkContext) -> Int {
         guard let area = apartment.area else { return 0 }
+        let maxWeight = benchmark.areaScoreWeight
         
         var score = 0
         if benchmark.useLiquidityAreaScore {
             switch area {
-            case 35.0...50.0: score = 15
-            case 25.0..<35.0: score = 11
-            case 50.0...70.0: score = 6
-            default:          score = 2
+            case 35.0...50.0: score = maxWeight
+            case 25.0..<35.0: score = Int(Double(maxWeight) * 0.73)
+            case 50.0...70.0: score = Int(Double(maxWeight) * 0.40)
+            default:          score = Int(Double(maxWeight) * 0.13)
             }
         } else {
             switch area {
-            case 60...: score = 15
-            case 45...: score = 11
-            case 30...: score = 6
-            default:    score = 2
+            case 60...: score = maxWeight
+            case 45...: score = Int(Double(maxWeight) * 0.73)
+            case 30...: score = Int(Double(maxWeight) * 0.40)
+            default:    score = Int(Double(maxWeight) * 0.13)
             }
         }
         
         // Double rooms bonus (most marginable for flipping)
         if apartment.roomsCount == 2 {
-            score = min(15, score + 4)
+            score = min(maxWeight, score + Int(Double(maxWeight) * 0.26))
         }
         return score
     }

@@ -22,6 +22,7 @@ struct ContentView: View {
             }
         }
         .task {
+            _ = modelContext.fetchOrCreateScoringConfiguration()
             guard viewModel == nil else { return }
             viewModel = container.makeContentViewModel(modelContext: modelContext)
         }
@@ -33,6 +34,7 @@ struct ContentView: View {
 struct ContentBody: View {
     @Bindable var viewModel: ContentViewModel
     let apartments: [Apartment]
+    @Query private var configs: [ScoringConfiguration]
 
     // Demand thresholds from AppStorage (shared with SettingsView)
     @AppStorage("demandThresholdModerate") private var moderate: Int = DemandThresholds.default.moderate
@@ -64,9 +66,7 @@ struct ContentBody: View {
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")      private var penalizePromotions: Bool = true
     @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
-    @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
     @AppStorage("useViewsScoreInsteadOfMetro") private var useViewsScoreInsteadOfMetro: Bool = false
-    @AppStorage("targetPercentile")        private var targetPercentile: Double = 0.5
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
     @AppStorage("minBuildingFloors")       private var minBuildingFloors: Int = 6
@@ -122,16 +122,11 @@ struct ContentBody: View {
                 viewModel.extrapolateMorningViews = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
-            .onChange(of: useLiquidityAreaScore) { _, v in
-                viewModel.useLiquidityAreaScore = v
-                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
-            }
             .onChange(of: useViewsScoreInsteadOfMetro) { _, v in
                 viewModel.useViewsScoreInsteadOfMetro = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
-            .onChange(of: targetPercentile) { _, v in
-                viewModel.targetPercentile = v
+            .onChange(of: configs) { _, _ in
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: maxMetroDistance) { _, v in
@@ -237,6 +232,7 @@ struct ContentBody: View {
             } label: {
                 Label("Поиск по ссылке", systemImage: showURLSearch ? "magnifyingglass.circle.fill" : "magnifyingglass.circle")
             }
+            .accessibilityIdentifier("main.toolbar.searchButton")
             .help("Найти квартиру по ссылке Циан")
 
             Button {
@@ -244,6 +240,7 @@ struct ContentBody: View {
             } label: {
                 Label("Настройки", systemImage: "gearshape")
             }
+            .accessibilityIdentifier("main.toolbar.settingsButton")
         }
     }
 
@@ -266,9 +263,7 @@ struct ContentBody: View {
         viewModel.filterCoordinator.hideApartments       = hideApartments
         viewModel.penalizePromotions   = penalizePromotions
         viewModel.extrapolateMorningViews = extrapolateMorningViews
-        viewModel.useLiquidityAreaScore = useLiquidityAreaScore
         viewModel.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
-        viewModel.targetPercentile     = targetPercentile
         viewModel.filterCoordinator.maxMetroDistance     = maxMetroDistance
         viewModel.filterCoordinator.metroWalkOnly        = metroWalkOnly
         viewModel.filterCoordinator.minBuildingFloors    = minBuildingFloors

@@ -105,6 +105,20 @@ if [ -z "$ED_SIGNATURE" ] || [ -z "$DMG_LENGTH" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Step 5.5: Write latest.json manifest for auto-updates
+# ---------------------------------------------------------------------------
+echo "📝 Writing latest.json manifest..."
+cat <<EOF > "$SCRIPT_DIR/latest.json"
+{
+  "version": "$SHORT_VERSION",
+  "build": "$BUILD_NUMBER",
+  "length": "$DMG_LENGTH",
+  "edSignature": "$ED_SIGNATURE",
+  "dmg_name": "$DMG_NAME"
+}
+EOF
+
+# ---------------------------------------------------------------------------
 # Step 6: Print developer cheatsheet
 # ---------------------------------------------------------------------------
 GREEN='\033[0;32m'

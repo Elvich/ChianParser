@@ -10,55 +10,188 @@ import SwiftData
 import SwiftUI
 
 struct SettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var configs: [ScoringConfiguration]
+
     var body: some View {
-        TabView {
-            DemandSettingsTab()
-                .tabItem {
-                    Label("Спрос", systemImage: "chart.bar.fill")
-                }
-                .tag(0)
+        Group {
+            if let config = configs.first {
+                TabView {
+                    DemandSettingsTab(config: config)
+                        .tabItem {
+                            Label("Спрос", systemImage: "chart.bar.fill")
+                        }
+                        .tag(0)
 
-            MetroBanlistTab()
-                .tabItem {
-                    Label("Станции МЦД", systemImage: "tram.fill")
-                }
-                .tag(1)
+                    ScoringSettingsTab(config: config)
+                        .tabItem {
+                            Label("Скоринг", systemImage: "checklist")
+                        }
+                        .tag(1)
 
-            SearchURLListTab()
-                .tabItem {
-                    Label("Ссылки поиска", systemImage: "link")
-                }
-                .tag(2)
+                    MetroBanlistTab()
+                        .tabItem {
+                            Label("Станции МЦД", systemImage: "tram.fill")
+                        }
+                        .tag(2)
 
-            ParserSettingsTab()
-                .tabItem {
-                    Label("Парсинг", systemImage: "gearshape.2")
-                }
-                .tag(3)
+                    SearchURLListTab()
+                        .tabItem {
+                            Label("Ссылки поиска", systemImage: "link")
+                        }
+                        .tag(3)
 
-            DistrictsSettingsTab()
-                .tabItem {
-                    Label("Районы", systemImage: "map")
-                }
-                .tag(4)
+                    ParserSettingsTab()
+                        .tabItem {
+                            Label("Парсинг", systemImage: "gearshape.2")
+                        }
+                        .tag(4)
 
-            AISettingsTab()
-                .tabItem {
-                    Label("AI", systemImage: "sparkles")
+                    DistrictsSettingsTab(config: config)
+                        .tabItem {
+                            Label("Районы", systemImage: "map")
+                        }
+                        .tag(5)
+
+                    AISettingsTab()
+                        .tabItem {
+                            Label("AI", systemImage: "sparkles")
+                        }
+                        .tag(6)
                 }
-                .tag(5)
+            } else {
+                ProgressView("Загрузка настроек...")
+                    .frame(width: 520, height: 400)
+                    .task {
+                        _ = modelContext.fetchOrCreateScoringConfiguration()
+                    }
+            }
         }
         .frame(width: 520)
+    }
+}
+
+// MARK: - Tab: Scoring Settings
+
+private struct ScoringSettingsTab: View {
+    @Bindable var config: ScoringConfiguration
+    
+    private var totalWeight: Int {
+        config.priceScoreWeight + config.metroProximityWeight + config.locationFloorWeight + config.areaScoreWeight
+    }
+    
+    var body: some View {
+        Form {
+            Section("Режимы оценки") {
+                Toggle("Оценка площади (FlipCurve)", isOn: $config.isCustomAreaScoreEnabled)
+                    .help("Оптимизирует баллы площади под флиппинг (максимум за 35-50 м², штраф за неликвидные размеры).")
+                    .accessibilityIdentifier("settings.scoring.isCustomAreaScoreEnabled")
+                Toggle("Верхняя граница рынка (перцентиль)", isOn: $config.isPercentileBenchmarkEnabled)
+                    .help("Расчет относительно цен верхнего сегмента рынка для оценки флип-маржи.")
+                    .accessibilityIdentifier("settings.scoring.isPercentileBenchmarkEnabled")
+            }
+            
+            if config.isPercentileBenchmarkEnabled {
+                Section {
+                    Slider(value: $config.targetPercentile, in: 0.50...0.95, step: 0.05) {
+                        Text("Уровень перцентиля")
+                    } minimumValueLabel: {
+                        Text("50%")
+                    } maximumValueLabel: {
+                        Text("95%")
+                    }
+                    .accessibilityIdentifier("settings.scoring.targetPercentileSlider")
+                    
+                    HStack {
+                        Text("Текущий эталон:")
+                        Spacer()
+                        Text("\(Int(config.targetPercentile * 100))%-й перцентиль")
+                            .foregroundStyle(.secondary)
+                            .bold()
+                    }
+                    .font(.caption)
+                } header: {
+                    Text("Бенчмарк рынка")
+                } footer: {
+                    Text("50% — обычная медиана. 80-90% — цена готовой квартиры с ремонтом.")
+                }
+            }
+            
+            Section("Глобальные исключения") {
+                Toggle("Автоматически отсеивать студии", isOn: $config.excludeStudios)
+                    .help("Не добавлять студии в базу данных при парсинге.")
+                    .accessibilityIdentifier("settings.scoring.excludeStudiosToggle")
+                Toggle("Автоматически отсеивать апартаменты", isOn: $config.excludeApartments)
+                    .help("Не добавлять коммерческие апартаменты в базу данных.")
+                    .accessibilityIdentifier("settings.scoring.excludeApartmentsToggle")
+            }
+            
+            Section {
+                Stepper(value: $config.priceScoreWeight, in: 0...100, step: 5) {
+                    HStack {
+                        Text("Вес скидки цены")
+                        Spacer()
+                        Text("\(config.priceScoreWeight) б.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .accessibilityIdentifier("settings.scoring.priceWeightStepper")
+                Stepper(value: $config.metroProximityWeight, in: 0...100, step: 5) {
+                    HStack {
+                        Text("Вес близости к метро")
+                        Spacer()
+                        Text("\(config.metroProximityWeight) б.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .accessibilityIdentifier("settings.scoring.metroWeightStepper")
+                Stepper(value: $config.locationFloorWeight, in: 0...100, step: 5) {
+                    HStack {
+                        Text("Вес этажности/локации")
+                        Spacer()
+                        Text("\(config.locationFloorWeight) б.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .accessibilityIdentifier("settings.scoring.locationWeightStepper")
+                Stepper(value: $config.areaScoreWeight, in: 0...100, step: 5) {
+                    HStack {
+                        Text("Вес площади")
+                        Spacer()
+                        Text("\(config.areaScoreWeight) б.")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .accessibilityIdentifier("settings.scoring.areaWeightStepper")
+            } header: {
+                Text("Веса метрик FlipScore")
+            } footer: {
+                HStack {
+                    Text("Суммарный вес:")
+                    Spacer()
+                    Text("\(totalWeight) / 100")
+                        .bold()
+                        .foregroundColor(totalWeight == 100 ? .green : .orange)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minHeight: 400)
     }
 }
 
 // MARK: - Tab 1: Demand Thresholds
 
 private struct DemandSettingsTab: View {
+    @Bindable var config: ScoringConfiguration
+
     @AppStorage("demandThresholdModerate") private var moderate: Int = DemandThresholds.default.moderate
     @AppStorage("demandThresholdMarket")   private var market: Int   = DemandThresholds.default.market
     @AppStorage("demandThresholdHot")      private var hot: Int      = DemandThresholds.default.hot
-    @AppStorage("useLiquidityAreaScore")   private var useLiquidityAreaScore: Bool = false
 
     @AppStorage("useViewsScoreInsteadOfMetro") private var useViewsScoreInsteadOfMetro: Bool = false
 
@@ -82,7 +215,7 @@ private struct DemandSettingsTab: View {
             }
 
             Section {
-                Toggle("Кривая ликвидности для площади", isOn: $useLiquidityAreaScore)
+                Toggle("Кривая ликвидности для площади", isOn: $config.isCustomAreaScoreEnabled)
                 Toggle("Баллы за просмотры вместо метро", isOn: $useViewsScoreInsteadOfMetro)
             } header: {
                 Text("Оценка площади (FlipScore)")
@@ -574,9 +707,10 @@ private struct ParserSettingsTab: View {
 // MARK: - Tab 5: Districts
 
 private struct DistrictsSettingsTab: View {
+    @Bindable var config: ScoringConfiguration
+
     @AppStorage("districtModeEnabled")      private var districtMode: Bool = false
     @AppStorage("benchmarkMode")            private var benchmarkMode: BenchmarkMode = .okrug
-    @AppStorage("targetPercentile")         private var targetPercentile: Double = 0.5
     @AppStorage(DistrictRanking.scoresKey)  private var scoresJSON: String = DistrictRanking.defaultScoresJSON
 
     @Environment(AppContainer.self) private var container
@@ -612,10 +746,11 @@ private struct DistrictsSettingsTab: View {
                     .help("Медианная цена. Умный режим ищет 5+ квартир у метро, иначе берёт район, затем АО.")
 
                     HStack {
-                        Text("Перцентиль эталона: \(Int(targetPercentile * 100))%")
+                        Text("Перцентиль эталона: \(Int(config.targetPercentile * 100))%")
                             .frame(width: 170, alignment: .leading)
-                        Slider(value: $targetPercentile, in: 0.1...0.95, step: 0.05)
+                        Slider(value: $config.targetPercentile, in: 0.1...0.95, step: 0.05)
                             .frame(width: 120)
+                            .disabled(!config.isPercentileBenchmarkEnabled)
                     }
                     .help("Перцентиль 50% — обычная медиана. 80-90% — цена готовой квартиры с хорошим ремонтом (верх рынка). Полезно для оценки флип-маржи.")
                 }
@@ -625,7 +760,7 @@ private struct DistrictsSettingsTab: View {
                     scoresJSON = DistrictRanking.defaultScoresJSON
                     districtMode = false
                     benchmarkMode = .okrug
-                    targetPercentile = 0.5
+                    config.targetPercentile = 0.5
                 }
                 .foregroundStyle(.red)
                 .font(.caption)

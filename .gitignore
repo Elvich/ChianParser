@@ -104,6 +104,10 @@ __pycache__/
 # Sparkle signing key — keep in Keychain, never commit
 .sparkle_private_key
 
+# SSH Keys for CD
+id_ed25519_chian_cd
+id_ed25519_chian_cd.pub
+
 # macOS / OS X
 .DS_Store
 .AppleDouble

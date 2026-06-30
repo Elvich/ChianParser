@@ -1,0 +1,54 @@
+name: Python Backend CI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "Backend/**"
+      - "Infrastructure/Dockerfile.backend"
+      - "Infrastructure/docker-compose*"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "Backend/**"
+      - "Infrastructure/Dockerfile.backend"
+      - "Infrastructure/docker-compose*"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  lint_and_test:
+    name: Проверка бэкенда (Lint & Docker Build)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Клонирование репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Установка Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "Backend/requirements.txt"
+
+      # 3. Установка зависимостей
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Backend/requirements.txt
+          pip install ruff
+
+      # 4. Линтинг и проверка форматирования кода через Ruff (быстрый аналог flake8 + black)
+      - name: Run Ruff Linter
+        run: ruff check Backend/
+
+      - name: Check Formatting (Ruff Format)
+        run: ruff format --check Backend/
+
+      # 5. Сборка Docker-контейнера для проверки корректности Dockerfile
+      - name: Build Docker Image
+        run: |
+          docker build -f Infrastructure/Dockerfile.backend -t chianparser-backend:latest Backend/

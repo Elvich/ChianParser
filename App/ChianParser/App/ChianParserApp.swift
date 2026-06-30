@@ -30,7 +30,8 @@ struct ChianParserApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Apartment.self,
-            PricePoint.self
+            PricePoint.self,
+            ScoringConfiguration.self
         ])
 
         // Explicit store URL so we can delete it on migration failure

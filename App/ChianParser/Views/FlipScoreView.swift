@@ -108,15 +108,15 @@ struct FlipScoreCard: View {
 
     private var scoreBreakdown: some View {
         VStack(spacing: 8) {
-            ScoreRow(label: "Цена vs рынок", icon: "tag",           score: result.priceScore, max: 40)
-            ScoreRow(label: "Метро",          icon: "tram",          score: result.metroScore, max: 25)
+            ScoreRow(label: "Цена vs рынок", icon: "tag",           score: result.priceScore, max: result.maxPriceScore)
+            ScoreRow(label: "Метро",          icon: "tram",          score: result.metroScore, max: result.maxMetroScore)
             ScoreRow(
                 label: result.isDistrictScore ? "Район" : "Этаж",
                 icon:  result.isDistrictScore ? "map" : "building.2",
                 score: result.locationScore,
-                max: 20
+                max: result.maxLocationScore
             )
-            ScoreRow(label: "Площадь",        icon: "square.dashed", score: result.areaScore,  max: 15)
+            ScoreRow(label: "Площадь",        icon: "square.dashed", score: result.areaScore,  max: result.maxAreaScore)
             if result.sellerBonus > 0 {
                 ScoreRow(label: "Агент / агентство", icon: "person.badge.plus", score: result.sellerBonus, max: 3)
             }

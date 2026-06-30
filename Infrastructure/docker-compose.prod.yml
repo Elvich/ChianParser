@@ -7,6 +7,8 @@ services:
       - "8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://chian:chian@db:5432/chianparser
+    volumes:
+      - ./updates:/app/updates
     depends_on:
       db:
         condition: service_healthy
