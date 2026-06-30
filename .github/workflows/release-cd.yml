@@ -56,8 +56,18 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          echo "$SSH_KEY" > ssh_key
+          # Записываем ключ без интерпретации обратных слэшей и вырезаем переводы строк Windows (CRLF)
+          printf "%s\n" "$SSH_KEY" | tr -d '\r' > ssh_key
           chmod 600 ssh_key
+          
+          # Безопасная диагностика формата ключа (без вывода секретных данных)
+          echo "🔍 Диагностика SSH-ключа:"
+          echo "Размер файла: $(wc -c < ssh_key) байт"
+          echo "Количество строк: $(wc -l < ssh_key)"
+          echo -n "Первая строка (маскированная): "
+          head -n 1 ssh_key | sed 's/[A-Za-z0-9]/x/g'
+          echo -n "Последняя строка (маскированная): "
+          tail -n 1 ssh_key | sed 's/[A-Za-z0-9]/x/g'
           
           DMG_FILE=$(ls App/*.dmg | head -n 1)
           LATEST_JSON="App/latest.json"
