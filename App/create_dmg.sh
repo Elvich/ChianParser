@@ -76,12 +76,19 @@ rm -rf "$DMG_STAGING"
 # ---------------------------------------------------------------------------
 echo "🔏 Signing with Sparkle EdDSA..."
 
-SIGN_UPDATE=$(find "$SCRIPT_DIR/build" ~/Library/Developer/Xcode/DerivedData \
-    -path "*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-    -type f 2>/dev/null | head -n 1 || true)
+SIGN_UPDATE="$SCRIPT_DIR/build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
 
-if [ -z "$SIGN_UPDATE" ]; then
-    echo "⚠️  sign_update not found in DerivedData — build the project in Xcode first."
+if [ ! -f "$SIGN_UPDATE" ]; then
+    echo "🔍 sign_update not found at default path, searching global DerivedData..."
+    set +e
+    SIGN_UPDATE=$(find ~/Library/Developer/Xcode/DerivedData \
+        -path "*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+        -type f 2>/dev/null | head -n 1)
+    set -e
+fi
+
+if [ -z "$SIGN_UPDATE" ] || [ ! -f "$SIGN_UPDATE" ]; then
+    echo "⚠️  sign_update not found — build the project in Xcode first."
     echo "   DMG created without signature: $SCRIPT_DIR/$DMG_NAME"
     exit 0
 fi
@@ -93,10 +100,16 @@ if [ ! -f "$PRIVATE_KEY_FILE" ]; then
     exit 0
 fi
 
-SIGN_OUTPUT=$("$SIGN_UPDATE" -f "$PRIVATE_KEY_FILE" "$SCRIPT_DIR/$DMG_NAME" 2>&1 || echo "__SIGN_UPDATE_FAILED__")
+set +e
+"$SIGN_UPDATE" -f "$PRIVATE_KEY_FILE" "$SCRIPT_DIR/$DMG_NAME" > "$SCRIPT_DIR/sign_output.txt" 2>&1
+SIGN_STATUS=$?
+set -e
 
-if [[ "$SIGN_OUTPUT" == *"__SIGN_UPDATE_FAILED__"* ]]; then
-    echo "❌ Sparkle sign_update failed!"
+SIGN_OUTPUT=$(cat "$SCRIPT_DIR/sign_output.txt" || true)
+rm -f "$SCRIPT_DIR/sign_output.txt"
+
+if [ $SIGN_STATUS -ne 0 ]; then
+    echo "❌ Sparkle sign_update failed with exit code $SIGN_STATUS!"
     echo "Output:"
     echo "$SIGN_OUTPUT"
     exit 1
@@ -104,8 +117,10 @@ fi
 
 # sign_update output example:
 #   sparkle:edSignature="ABC123..." sparkle:length="1234567"
+set +e
 ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -oE 'sparkle:edSignature="[^"]+"' | sed 's/sparkle:edSignature="//' | tr -d '"')
 DMG_LENGTH=$(echo "$SIGN_OUTPUT"   | grep -oE 'sparkle:length="[^"]+"'      | sed 's/sparkle:length="//'      | tr -d '"')
+set -e
 
 if [ -z "$ED_SIGNATURE" ] || [ -z "$DMG_LENGTH" ]; then
     echo "❌ sign_update produced unexpected output:"
