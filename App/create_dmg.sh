@@ -94,13 +94,10 @@ if [ ! -f "$PRIVATE_KEY_FILE" ]; then
     exit 0
 fi
 
-set +e
-SIGN_OUTPUT=$("$SIGN_UPDATE" -f "$PRIVATE_KEY_FILE" "$SCRIPT_DIR/$DMG_NAME" 2>&1)
-SIGN_STATUS=$?
-set -e
+SIGN_OUTPUT=$("$SIGN_UPDATE" -f "$PRIVATE_KEY_FILE" "$SCRIPT_DIR/$DMG_NAME" 2>&1 || echo "__SIGN_UPDATE_FAILED__")
 
-if [ $SIGN_STATUS -ne 0 ]; then
-    echo "❌ Sparkle sign_update failed with exit code $SIGN_STATUS"
+if [[ "$SIGN_OUTPUT" == *"__SIGN_UPDATE_FAILED__"* ]]; then
+    echo "❌ Sparkle sign_update failed!"
     echo "Output:"
     echo "$SIGN_OUTPUT"
     exit 1
