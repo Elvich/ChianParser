@@ -23,6 +23,10 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # 2.3 Установка Metal Toolchain (требуется для компиляции mlx-swift на macOS-раннерах)
+      - name: Install Metal Toolchain
+        run: sudo xcodebuild -downloadComponent MetalToolchain
+
       # 3. Кэширование SPM зависимостей
       - name: Cache Swift Package Manager Dependencies
         uses: actions/cache@v4
