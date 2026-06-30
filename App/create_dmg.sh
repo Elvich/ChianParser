@@ -24,6 +24,7 @@ xcodebuild -scheme "$SCHEME" \
            -configuration Release \
            -derivedDataPath "$BUILD_DIR" \
            -destination 'platform=macOS' \
+           CODE_SIGN_IDENTITY="-" \
            build \
            | xcpretty 2>/dev/null || true   # xcpretty is optional
 
