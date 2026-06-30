@@ -156,7 +156,11 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
             benchmarkOkrug: benchmarkOkrug,
             benchmarkSampleSize: sampleSize,
             demandLevel: demandLevel,
-            viewsPerDay: viewsPerDay
+            viewsPerDay: viewsPerDay,
+            maxPriceScore: benchmark.priceScoreWeight,
+            maxMetroScore: benchmark.metroProximityWeight,
+            maxLocationScore: benchmark.locationFloorWeight,
+            maxAreaScore: benchmark.areaScoreWeight
         )
     }
 }
@@ -241,22 +245,22 @@ private extension FlipAnalyzer {
         if benchmark.useLiquidityAreaScore {
             switch area {
             case 35.0...50.0: score = maxWeight
-            case 25.0..<35.0: score = Int(Double(maxWeight) * 0.73)
-            case 50.0...70.0: score = Int(Double(maxWeight) * 0.40)
-            default:          score = Int(Double(maxWeight) * 0.13)
+            case 25.0..<35.0: score = Int((Double(maxWeight) * 0.7333).rounded())
+            case 50.0...70.0: score = Int((Double(maxWeight) * 0.40).rounded())
+            default:          score = Int((Double(maxWeight) * 0.1333).rounded())
             }
         } else {
             switch area {
             case 60...: score = maxWeight
-            case 45...: score = Int(Double(maxWeight) * 0.73)
-            case 30...: score = Int(Double(maxWeight) * 0.40)
-            default:    score = Int(Double(maxWeight) * 0.13)
+            case 45...: score = Int((Double(maxWeight) * 0.7333).rounded())
+            case 30...: score = Int((Double(maxWeight) * 0.40).rounded())
+            default:    score = Int((Double(maxWeight) * 0.1333).rounded())
             }
         }
         
         // Double rooms bonus (most marginable for flipping)
         if apartment.roomsCount == 2 {
-            score = min(maxWeight, score + Int(Double(maxWeight) * 0.26))
+            score = min(maxWeight, score + Int((Double(maxWeight) * 0.2666).rounded()))
         }
         return score
     }
