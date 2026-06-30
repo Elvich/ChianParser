@@ -118,8 +118,8 @@ fi
 # sign_update output example:
 #   sparkle:edSignature="ABC123..." sparkle:length="1234567"
 set +e
-ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -oE 'sparkle:edSignature="[^"]+"' | sed 's/sparkle:edSignature="//' | tr -d '"')
-DMG_LENGTH=$(echo "$SIGN_OUTPUT"   | grep -oE 'sparkle:length="[^"]+"'      | sed 's/sparkle:length="//'      | tr -d '"')
+ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -oE '(sparkle:)?edSignature="[^"]+"' | sed -E 's/(sparkle:)?edSignature="//' | tr -d '"')
+DMG_LENGTH=$(echo "$SIGN_OUTPUT"   | grep -oE '(sparkle:)?length="[0-9]+"'     | sed -E 's/(sparkle:)?length="//'      | tr -d '"')
 set -e
 
 if [ -z "$ED_SIGNATURE" ] || [ -z "$DMG_LENGTH" ]; then
