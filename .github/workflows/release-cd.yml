@@ -25,7 +25,9 @@ jobs:
 
       # 2.3 Установка Metal Toolchain (требуется для компиляции mlx-swift на macOS 15)
       - name: Install Metal Toolchain
-        run: sudo xcodebuild -downloadComponent MetalToolchain
+        run: |
+          sudo xcodebuild -runFirstLaunch
+          sudo xcodebuild -downloadComponent MetalToolchain
 
 
 
