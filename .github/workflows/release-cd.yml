@@ -23,9 +23,6 @@ jobs:
         with:
           xcode-version: '16.2'
 
-      # 2.3 Установка Metal Toolchain (требуется для компиляции mlx-swift на macOS 14)
-      - name: Install Metal Toolchain
-        run: sudo xcodebuild -downloadComponent MetalToolchain
 
 
 
