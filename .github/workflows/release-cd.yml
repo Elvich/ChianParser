@@ -53,12 +53,16 @@ jobs:
 
       # 6. Заливка собранного DMG и манифеста latest.json на продакшн сервер по SCP
       - name: Deploy DMG and latest.json to Production
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "App/*.dmg,App/latest.json"
-          target: ${{ secrets.SSH_TARGET_DIR }}
-          strip_components: 1
+        run: |
+          cat << 'EOF' > ssh_key
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
+          chmod 600 ssh_key
+          
+          DMG_FILE=$(ls App/*.dmg | head -n 1)
+          LATEST_JSON="App/latest.json"
+          
+          echo "📤 Отправка файлов по SCP..."
+          scp -i ssh_key -P ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no "$DMG_FILE" "$LATEST_JSON" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_TARGET_DIR }}/"
+          
+          rm -f ssh_key
