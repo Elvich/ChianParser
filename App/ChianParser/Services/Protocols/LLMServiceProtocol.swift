@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 protocol LLMServiceProtocol: AnyObject {
     var state: LLMState { get }
     func loadModel()

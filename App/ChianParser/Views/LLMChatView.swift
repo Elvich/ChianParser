@@ -141,6 +141,7 @@ private struct MessageBubble: View {
         .environment(AppContainer())
 }
 
+@MainActor
 private final class PreviewLLMService: LLMServiceProtocol {
     var state: LLMState = .ready
     func loadModel() {}

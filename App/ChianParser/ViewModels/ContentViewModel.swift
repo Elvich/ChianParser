@@ -420,7 +420,7 @@ final class ContentViewModel {
                 if !result.newlyInsertedIDs.isEmpty {
                     var newlyInserted: [Apartment] = []
                     for id in result.newlyInsertedIDs {
-                        if let apt = try? modelContext.model(for: id) as? Apartment {
+                        if let apt = modelContext.model(for: id) as? Apartment {
                             newlyInserted.append(apt)
                         }
                     }

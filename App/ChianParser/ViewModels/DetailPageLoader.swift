@@ -216,12 +216,11 @@ extension DetailPageLoader: WKNavigationDelegate {
                     trigger: trigger
                 )
                 
-                UNUserNotificationCenter.current().add(request) { error in
-                    if let error = error {
-                        print("❌ Failed to send captcha notification: \(error.localizedDescription)")
-                    } else {
-                        print("✅ Captcha desktop notification sent successfully.")
-                    }
+                do {
+                    try await UNUserNotificationCenter.current().add(request)
+                    print("✅ Captcha desktop notification sent successfully.")
+                } catch {
+                    print("❌ Failed to send captcha notification: \(error.localizedDescription)")
                 }
                 
                 // Don't proceed — wait for next didFinish after user solves captcha
