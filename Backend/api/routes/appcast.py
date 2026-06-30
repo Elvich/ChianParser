@@ -95,5 +95,5 @@ async def download_latest() -> FileResponse:
     return FileResponse(
         path=file_path,
         media_type="application/octet-stream",
-        filename="ChianParser.dmg"
+        filename="ChianParser.dmg",
     )

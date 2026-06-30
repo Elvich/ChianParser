@@ -14,6 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRIVATE_KEY_FILE="$REPO_ROOT/.sparkle_private_key"
 
+cd "$SCRIPT_DIR"
+
 # ---------------------------------------------------------------------------
 # Step 1: Extract version from built app's Info.plist
 # ---------------------------------------------------------------------------
