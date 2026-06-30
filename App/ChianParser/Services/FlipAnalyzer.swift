@@ -231,7 +231,7 @@ private extension FlipAnalyzer {
             return Int(Double(maxWeight) * 0.35)
         }
         if floor == 1         { return 0 }
-        if floor == total     { return Int(Double(maxWeight) * 0.10) }
+        if floor == total     { return Int(Double(maxWeight) * 0.25) }
         if floor == total - 1 { return Int(Double(maxWeight) * 0.65) }
         return maxWeight
     }

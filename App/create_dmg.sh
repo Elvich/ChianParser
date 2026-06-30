@@ -94,7 +94,17 @@ if [ ! -f "$PRIVATE_KEY_FILE" ]; then
     exit 0
 fi
 
-SIGN_OUTPUT=$("$SIGN_UPDATE" "$SCRIPT_DIR/$DMG_NAME" -f "$PRIVATE_KEY_FILE" 2>&1)
+set +e
+SIGN_OUTPUT=$("$SIGN_UPDATE" -f "$PRIVATE_KEY_FILE" "$SCRIPT_DIR/$DMG_NAME" 2>&1)
+SIGN_STATUS=$?
+set -e
+
+if [ $SIGN_STATUS -ne 0 ]; then
+    echo "❌ Sparkle sign_update failed with exit code $SIGN_STATUS"
+    echo "Output:"
+    echo "$SIGN_OUTPUT"
+    exit 1
+fi
 
 # sign_update output example:
 #   sparkle:edSignature="ABC123..." sparkle:length="1234567"
@@ -102,7 +112,7 @@ ED_SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -oE 'sparkle:edSignature="[^"]+"' | se
 DMG_LENGTH=$(echo "$SIGN_OUTPUT"   | grep -oE 'sparkle:length="[^"]+"'      | sed 's/sparkle:length="//'      | tr -d '"')
 
 if [ -z "$ED_SIGNATURE" ] || [ -z "$DMG_LENGTH" ]; then
-    echo "❌ sign_update failed or produced unexpected output:"
+    echo "❌ sign_update produced unexpected output:"
     echo "$SIGN_OUTPUT"
     exit 1
 fi
