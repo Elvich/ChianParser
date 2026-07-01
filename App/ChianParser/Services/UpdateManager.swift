@@ -28,11 +28,10 @@ final class UpdateManager {
 // is a KVO property on SPUUpdater — Combine's publisher(for:) is the correct bridge.
 final class CheckForUpdatesViewModel: ObservableObject {
     @Published private(set) var canCheckForUpdates = false
-    private var cancellable: AnyCancellable?
 
     init(updater: SPUUpdater) {
-        cancellable = updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: \.canCheckForUpdates, on: self)
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
     }
 }
 

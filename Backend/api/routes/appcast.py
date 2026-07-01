@@ -14,6 +14,11 @@ _DEFAULT_SIGNATURE = "f+FY61qNHyMHYmcjlnAwm+U6A90g0BB1HIVFay/bRCvxUQfHIa1oV8v84Q
 _DEFAULT_DMG_NAME = "ChianParser_1.1.0_b2.dmg"
 _BASE_URL = "https://flipping.elvi4.tech/api/v1/updates"
 
+# Путь к папке обновлений вычисляется относительно файла скрипта
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(_CURRENT_DIR)))
+_UPDATES_DIR = os.path.join(_BACKEND_DIR, "updates")
+
 _APPCAST_TEMPLATE = """\
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0"
@@ -51,7 +56,7 @@ _APPCAST_TEMPLATE = """\
 
 
 def _load_latest_manifest() -> dict:
-    manifest_path = "updates/latest.json"
+    manifest_path = os.path.join(_UPDATES_DIR, "latest.json")
     if os.path.exists(manifest_path):
         try:
             with open(manifest_path, "r") as f:
@@ -86,11 +91,11 @@ async def get_appcast() -> Response:
 async def download_latest() -> FileResponse:
     manifest = _load_latest_manifest()
     dmg_name = manifest.get("dmg_name", _DEFAULT_DMG_NAME)
-    file_path = os.path.join("updates", dmg_name)
+    file_path = os.path.join(_UPDATES_DIR, dmg_name)
 
     # Проверяем, существует ли кастомный файл, иначе отдаем дефолтный
     if not os.path.exists(file_path):
-        file_path = os.path.join("updates", _DEFAULT_DMG_NAME)
+        file_path = os.path.join(_UPDATES_DIR, _DEFAULT_DMG_NAME)
 
     return FileResponse(
         path=file_path,
