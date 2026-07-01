@@ -665,3 +665,105 @@ struct FlipAnalyzerWeightsTests {
         #expect(result1.maxMetroScore == 30)
     }
 }
+
+// MARK: - FlipAnalyzer: Demand Extrapolation Tests
+
+@Suite("FlipAnalyzer — Demand Extrapolation")
+@MainActor
+struct FlipAnalyzerDemandExtrapolationTests {
+    let analyzer = FlipAnalyzer()
+    let thresholds = DemandThresholds(moderate: 10, market: 20, hot: 50)
+
+    private func makeApartment(
+        viewsToday: Int? = nil,
+        viewsTotal: Int? = nil,
+        publishedDate: Date? = nil
+    ) -> Apartment {
+        let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        apt.viewsToday = viewsToday
+        apt.viewsTotal = viewsTotal
+        apt.publishedDate = publishedDate
+        return apt
+    }
+
+    private func makeDate(hour: Int, minute: Int = 0) -> Date {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 7
+        components.day = 2
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        return Calendar.current.date(from: components)!
+    }
+
+    // 1. По времени суток: раннее утро (с 00:00 до 08:00) -> экстраполяция отключена, безопасный фолбэк
+    @Test("Early morning (03:00) -> extrapolation disabled, uses raw viewsToday")
+    func earlyMorning_extrapolationDisabled() {
+        let apt = makeApartment(viewsToday: 5)
+        let refDate = makeDate(hour: 3) // 03:00 раннее утро
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: true)
+        
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds, referenceDate: refDate)
+        // При viewsToday = 5 и отключенной экстраполяции: 5 просмотров в день (low demand, т.к. 5 < 10)
+        #expect(result.viewsPerDay == 5.0)
+        #expect(result.demandLevel == .low)
+    }
+
+    // 2. По времени суток: дневное время (12:00) -> экстраполяция включена
+    @Test("Daytime (12:00) -> extrapolation enabled, scales viewsToday")
+    func daytime_extrapolationEnabled() {
+        let apt = makeApartment(viewsToday: 19) // 19 просмотров к 12:00
+        let refDate = makeDate(hour: 12) // 12:00 день (cumulative percentage = 0.38)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: true)
+        
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds, referenceDate: refDate)
+        // 19 / 0.38 = 50.0 просмотров в день (hot demand, т.к. 50 >= 50)
+        #expect(result.viewsPerDay == 50.0)
+        #expect(result.demandLevel == .hot)
+    }
+
+    // 3. По новизне: квартира новая (опубликована 12 часов назад) -> экстраполяция новизны включена
+    @Test("New apartment (12h old) -> extrapolation by age enabled")
+    func newApartment_extrapolationByAge() {
+        let refDate = makeDate(hour: 12) // 12:00
+        let publishedDate = refDate.addingTimeInterval(-3600 * 12) // 12 часов назад
+        let apt = makeApartment(viewsTotal: 10, publishedDate: publishedDate) // viewsToday = nil, сработает Фолбэк 2
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds, referenceDate: refDate)
+        // 12 часов = 0.5 дня. Экстраполировано: 10 / 0.5 = 20 просмотров в день (market demand, т.к. 20 >= 20)
+        #expect(result.viewsPerDay == 20.0)
+        #expect(result.demandLevel == .market)
+    }
+
+    // 4. По новизне: защита от нереалистичных выбросов для сверхновых объявлений (1 минута назад)
+    @Test("Slightly new apartment (1m old) -> capped at 2 hours minimum")
+    func ultraNewApartment_cappedByMinHours() {
+        let refDate = makeDate(hour: 12)
+        let publishedDate = refDate.addingTimeInterval(-60) // 1 минута назад
+        let apt = makeApartment(viewsTotal: 1, publishedDate: publishedDate)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds, referenceDate: refDate)
+        // Минимальное время жизни: 2 часа = 2.0 / 24.0 = 0.0833 дня.
+        // Экстраполировано: 1 / 0.0833 = 12.0 просмотров в день. (moderate demand, т.к. 12 >= 10)
+        #expect(abs((result.viewsPerDay ?? 0.0) - 12.0) < 0.001)
+        #expect(result.demandLevel == .moderate)
+    }
+
+    // 5. По новизне: квартира старше 3 дней -> экстраполяция новизны отключена
+    @Test("Old apartment (4 days old) -> extrapolation by age disabled, uses actual days")
+    func oldApartment_extrapolationDisabled() {
+        let refDate = makeDate(hour: 12)
+        let publishedDate = refDate.addingTimeInterval(-3600 * 24 * 4) // 4 дня назад
+        let apt = makeApartment(viewsTotal: 40, publishedDate: publishedDate)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds, referenceDate: refDate)
+        // 40 / 4 дня = 10 просмотров в день (moderate demand, т.к. 10 >= 10)
+        #expect(result.viewsPerDay == 10.0)
+        #expect(result.demandLevel == .moderate)
+    }
+}
+

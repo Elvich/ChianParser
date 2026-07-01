@@ -79,7 +79,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
         )
     }
 
-    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult {
+    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds, referenceDate: Date = Date()) -> FlipScoreResult {
         let priceSqm: Double? = {
             guard let area = apartment.area, area > 10, apartment.price > 0 else { return nil }
             return Double(apartment.price) / area
@@ -122,7 +122,7 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm, benchmark: benchmark)
         
-        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions, extrapolateMorningViews: benchmark.extrapolateMorningViews)
+        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions, extrapolateMorningViews: benchmark.extrapolateMorningViews, referenceDate: referenceDate)
         
         let metroScore: Int
         if benchmark.useViewsScoreInsteadOfMetro {
@@ -283,15 +283,15 @@ private extension FlipAnalyzer {
         }
     }
 
-    /// Demand computation from views/day.
-    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true) -> (DemandLevel, Double?) {
+    /// Вычисление спроса на основе просмотров в день.
+    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true, referenceDate: Date = Date()) -> (DemandLevel, Double?) {
         var rawPerDay: Double? = nil
         
-        // 1. Приоритет: честная дельта (rolling window) за последние N часов
+        // 1. Приоритет: честная дельта (скользящее окно) за последние N часов
         if let prevTotal = apartment.previousViewsTotal,
            let prevDate = apartment.previousViewsDate,
            let currentTotal = apartment.viewsTotal {
-            let hoursPassed = Date().timeIntervalSince(prevDate) / 3600.0
+            let hoursPassed = referenceDate.timeIntervalSince(prevDate) / 3600.0
             if hoursPassed > 12.0 {
                 let deltaViews = currentTotal - prevTotal
                 if deltaViews >= 0 {
@@ -302,23 +302,29 @@ private extension FlipAnalyzer {
 
         // 2. Фолбэк 1: Просмотры "за сегодня" (от Циана)
         if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
+            let hour = Calendar.current.component(.hour, from: referenceDate)
+            let isEarlyMorning = (0..<8).contains(hour)
+            
             if extrapolateMorningViews {
-                let hour = Calendar.current.component(.hour, from: Date())
-                
-                // Cumulative percentage of daily views by hour (approximate curve)
-                // 0: 0%, 4: 3%, 8: 10%, 12: 38%, 16: 66%, 20: 90%, 24: 100%
-                let distribution: [Double] = [
-                    0.0, 0.01, 0.02, 0.02, 0.03, 0.03, 0.04, 0.06, 0.10, 0.15, 0.22, 0.30, 0.38,
-                    0.45, 0.52, 0.59, 0.66, 0.73, 0.79, 0.85, 0.90, 0.94, 0.97, 0.99, 1.0
-                ]
-                
-                let h = max(0, min(24, hour))
-                let percentage = distribution[h]
-                
-                // Если процент слишком мал (до 8 утра), лучше пропустить этот шаг 
-                // и перейти к Фолбэку 2 (среднее за все время), чтобы избежать ошибок экстраполяции
-                if percentage >= 0.10 {
-                    rawPerDay = Double(viewsToday) / percentage
+                if isEarlyMorning {
+                    // Раннее утро (с 00:00 до 08:00): экстраполяция автоматически отключается (безопасный фолбэк)
+                    rawPerDay = Double(viewsToday)
+                } else {
+                    // Накопленный процент суточных просмотров по часам (аппроксимация активности)
+                    // 0: 0%, 4: 3%, 8: 10%, 12: 38%, 16: 66%, 20: 90%, 24: 100%
+                    let distribution: [Double] = [
+                        0.0, 0.01, 0.02, 0.02, 0.03, 0.03, 0.04, 0.06, 0.10, 0.15, 0.22, 0.30, 0.38,
+                        0.45, 0.52, 0.59, 0.66, 0.73, 0.79, 0.85, 0.90, 0.94, 0.97, 0.99, 1.0
+                    ]
+                    let h = max(0, min(24, hour))
+                    let percentage = distribution[h]
+                    
+                    // Если процент просмотров достаточный (начиная с 8 утра, >= 10%), выполняем экстраполяцию
+                    if percentage >= 0.10 {
+                        rawPerDay = Double(viewsToday) / percentage
+                    } else {
+                        rawPerDay = Double(viewsToday)
+                    }
                 }
             } else {
                 rawPerDay = Double(viewsToday)
@@ -327,8 +333,21 @@ private extension FlipAnalyzer {
         
         // 3. Фолбэк 2: Среднее значение за всё время жизни объявления
         if rawPerDay == nil, let total = apartment.viewsTotal, total > 0, let published = apartment.publishedDate {
-            let days = max(1.0, Date().timeIntervalSince(published) / 86400)
-            rawPerDay = Double(total) / days
+            let actualDays = referenceDate.timeIntervalSince(published) / 86400.0
+            
+            if actualDays > 3.0 {
+                // Если объявление старше 3 дней, экстраполяция новизны отключается
+                let days = max(1.0, actualDays)
+                rawPerDay = Double(total) / days
+            } else {
+                // Квартира новая (опубликована менее 3 дней назад).
+                // Применяем экстраполяцию просмотров пропорционально времени жизни объявления.
+                // Чтобы избежать нереалистичных выбросов на сверхновых объявлениях,
+                // минимальное время жизни для экстраполяции — 2 часа (2.0 / 24.0 дня).
+                let minDays = 2.0 / 24.0
+                let effectiveDays = max(minDays, actualDays)
+                rawPerDay = Double(total) / effectiveDays
+            }
         }
         
         guard let finalRaw = rawPerDay else {
