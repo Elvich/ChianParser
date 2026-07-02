@@ -1,20 +1,8 @@
 services:
-  backend:
-    build:
-      context: ../Backend
-      dockerfile: ../Infrastructure/Dockerfile.backend
-    expose:
-      - "8000"
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://chian:chian@db:5432/chianparser
-    volumes:
-      - ./updates:/app/updates
-    depends_on:
-      db:
-        condition: service_healthy
-
   db:
     image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: chian
       POSTGRES_PASSWORD: chian
@@ -33,12 +21,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - backend
 
 volumes:
   postgres_data:

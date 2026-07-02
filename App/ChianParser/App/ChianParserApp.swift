@@ -16,13 +16,15 @@ struct ChianParserApp: App {
     private let updateManager = UpdateManager()
 
     init() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if granted {
-                print("✅ Notification permission granted.")
-            } else if let error = error {
-                print("❌ Notification permission error: \(error.localizedDescription)")
-            } else {
-                print("⚠️ Notification permission denied.")
+        if !ProcessInfo.processInfo.arguments.contains("-uitesting") {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+                if granted {
+                    print("✅ Notification permission granted.")
+                } else if let error = error {
+                    print("❌ Notification permission error: \(error.localizedDescription)")
+                } else {
+                    print("⚠️ Notification permission denied.")
+                }
             }
         }
     }
@@ -60,6 +62,7 @@ struct ChianParserApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .frame(minWidth: 1200, minHeight: 768)
         }
         .environment(container)
         .modelContainer(sharedModelContainer)

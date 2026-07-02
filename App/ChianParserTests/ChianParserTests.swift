@@ -423,7 +423,7 @@ struct FlipAnalyzerDemandTests {
     @Test("viewsToday = nil → noData")
     func demand_noData() {
         let apt = makeApartment(viewsToday: nil)
-        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .noData)
     }
@@ -431,7 +431,7 @@ struct FlipAnalyzerDemandTests {
     @Test("viewsToday = 30 → low")
     func demand_low() {
         let apt = makeApartment(viewsToday: 30)
-        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .low)
     }
@@ -439,7 +439,7 @@ struct FlipAnalyzerDemandTests {
     @Test("viewsToday = 150 → market")
     func demand_market() {
         let apt = makeApartment(viewsToday: 150)
-        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .market)
     }
@@ -447,7 +447,7 @@ struct FlipAnalyzerDemandTests {
     @Test("viewsToday = 250 → hot")
     func demand_hot() {
         let apt = makeApartment(viewsToday: 250)
-        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0)
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .hot)
     }

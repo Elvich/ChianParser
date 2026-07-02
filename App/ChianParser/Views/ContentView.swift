@@ -19,6 +19,11 @@ struct ContentView: View {
         Group {
             if let viewModel {
                 ContentBody(viewModel: viewModel, apartments: apartments)
+            } else {
+                // Отображаем индикатор загрузки, пока инициализируется модель представления.
+                // Это предотвращает появление пустого окна на macOS, что ломает UI-тесты.
+                ProgressView("Загрузка...")
+                    .frame(minWidth: 1200, minHeight: 768)
             }
         }
         .task {

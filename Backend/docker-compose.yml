@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: chian_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://chian_admin:secure_password_123@db:5432/chian_db
+      - CHIAN_API_KEY=your_secure_api_key_here
+      - TELEGRAM_BOT_TOKEN=your_bot_token
+      - TELEGRAM_CHAT_ID=your_chat_id
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    container_name: chian_postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=chian_admin
+      - POSTGRES_PASSWORD=secure_password_123
+      - POSTGRES_DB=chian_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
