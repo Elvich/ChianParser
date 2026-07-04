@@ -442,7 +442,7 @@ struct CianDetailParserViewsTests {
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
-        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":78}]}}
+        {"days":[{"date":"\(yesterdayStr)","views":78}]}
         """
         #expect(apt.yesterdayViews == 78)
     }
@@ -536,7 +536,7 @@ struct FlipAnalyzerDemandTests {
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
-        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":150}]}}
+        {"days":[{"date":"\(yesterdayStr)","views":150}]}
         """
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
@@ -553,7 +553,7 @@ struct FlipAnalyzerDemandTests {
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
-        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":150}]}}
+        {"days":[{"date":"\(yesterdayStr)","views":150}]}
         """
         apt.viewsToday = 10
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false, useYesterdayViews: false)
@@ -570,12 +570,12 @@ struct FlipAnalyzerDemandTests {
         
         // Вчерашнего дня нет, но есть позавчерашние 3 дня: 80, 100, 120 (среднее = 100)
         apt.viewsHistoryJSON = """
-        {"daily":{"dailyViews":[
+        {"days":[
             {"date":"2026-06-28","views":80},
             {"date":"2026-06-29","views":100},
             {"date":"2026-06-30","views":120},
             {"date":"\(todayStr)","views":300}
-        ]}}
+        ]}
         """
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         // Задаем referenceDate в будущем, чтобы сегодняшнее число из JSON соответствовало сегодняшнему дню

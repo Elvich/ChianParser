@@ -296,14 +296,11 @@ private extension FlipAnalyzer {
         
         // Вспомогательные DTO для парсинга истории просмотров
         struct CianViewsHistoryDTO: Codable {
-            struct Daily: Codable {
-                struct DayViews: Codable {
-                    let date: String
-                    let views: Int
-                }
-                let dailyViews: [DayViews]
+            struct DayViews: Codable {
+                let date: String
+                let views: Int
             }
-            let daily: Daily
+            let days: [DayViews]
         }
         
         // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории (или макс вчера/сегодня)
@@ -380,7 +377,7 @@ private extension FlipAnalyzer {
         if useYesterdayViews, rawPerDay == nil, let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
            let data = historyJSON.data(using: .utf8),
            let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
-            let dailyViews = history.daily.dailyViews
+            let dailyViews = history.days
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             let todayStr = formatter.string(from: referenceDate)
