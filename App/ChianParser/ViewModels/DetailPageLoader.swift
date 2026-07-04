@@ -329,19 +329,21 @@ extension DetailPageLoader: WKNavigationDelegate {
                     } catch(e) {}
                 }
 
-                // 3. Выполняем fetch детальной статистики
-                var viewsHistory = null;
-                if (offerId && publishedDate) {
-                    try {
-                        var statsUrl = 'https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate=' + encodeURIComponent(publishedDate) + '&offerId=' + offerId;
-                        var response = await fetch(statsUrl);
-                        if (response.ok) {
-                            viewsHistory = await response.text();
-                        }
-                    } catch(e) {
-                        console.error("Fetch views history failed:", e);
-                    }
-                }
+                 // 3. Выполняем fetch детальной статистики
+                 var viewsHistory = null;
+                 if (offerId && publishedDate) {
+                     try {
+                         var statsUrl = 'https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate=' + encodeURIComponent(publishedDate) + '&offerId=' + offerId;
+                         var response = await fetch(statsUrl, { credentials: 'include' });
+                         if (response.ok) {
+                             viewsHistory = await response.text();
+                         } else {
+                             viewsHistory = JSON.stringify({ error: "HTTP " + response.status });
+                         }
+                     } catch(e) {
+                         viewsHistory = JSON.stringify({ error: e.message || String(e) });
+                     }
+                 }
 
                 // Helper: extract views string from DOM text (e.g. "1507 просмотров, 7 за сегодня")
                 function extractViewsFromDOM() {
