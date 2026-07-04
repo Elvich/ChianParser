@@ -71,12 +71,32 @@ final class Apartment {
         }
         
         guard let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) else { return nil }
+        
+        // Используем московский часовой пояс, так как сервера Циан работают по Московскому времени
+        guard let moscowTimeZone = TimeZone(identifier: "Europe/Moscow") else { return nil }
+        var calendar = Calendar.current
+        calendar.timeZone = moscowTimeZone
+        
+        let yesterdayDate = calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date().addingTimeInterval(-86400)
+        
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date().addingTimeInterval(-86400)
+        formatter.timeZone = moscowTimeZone
         let yesterdayStr = formatter.string(from: yesterdayDate)
         
-        return history.days.first(where: { $0.date == yesterdayStr })?.views
+        if let found = history.days.first(where: { $0.date == yesterdayStr }) {
+            return found.views
+        }
+        
+        // Если дата вчерашнего дня отсутствует в истории, но находится в пределах диапазона
+        // дат истории, значит вчера было 0 просмотров (а не nil, чтобы не откатываться на сегодня)
+        let sortedDates = history.days.map { $0.date }.sorted()
+        if let firstDate = sortedDates.first, let lastDate = sortedDates.last,
+           yesterdayStr >= firstDate, yesterdayStr <= lastDate {
+            return 0
+        }
+        
+        return nil
     }
     
     // Снэпшот для вычисления честного спроса за день (Дельта)

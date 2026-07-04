@@ -255,9 +255,27 @@ extension DetailPageLoader: WKNavigationDelegate {
                 return
             }
 
-            // Wait for Next.js hydration AND stats XHR to complete
-            // Stats are loaded via a separate API call after SSR — need extra time
-            try? await Task.sleep(nanoseconds: 4_000_000_000) // 4 seconds
+            let jsWaitForHydration = """
+            (async function() {
+                return await new Promise((resolve) => {
+                    if (window.__NEXT_DATA__) {
+                        resolve(true);
+                        return;
+                    }
+                    const startTime = Date.now();
+                    const interval = setInterval(() => {
+                        if (window.__NEXT_DATA__) {
+                            clearInterval(interval);
+                            resolve(true);
+                        } else if (Date.now() - startTime > 5000) {
+                            clearInterval(interval);
+                            resolve(false);
+                        }
+                    }, 200);
+                });
+            })();
+            """
+            _ = try? await webView.evaluateJavaScript(jsWaitForHydration)
 
             let jsExtractJSON = """
             (async function() {

@@ -436,15 +436,45 @@ struct CianDetailParserViewsTests {
     @Test("Вычисляемое свойство yesterdayViews извлекает вчерашние просмотры")
     func views_yesterdayViewsComputedProperty() throws {
         let apt = makeApartment()
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")!
+        var calendar = Calendar.current
+        calendar.timeZone = moscowTimeZone
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        formatter.timeZone = moscowTimeZone
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
         {"days":[{"date":"\(yesterdayStr)","views":78}]}
         """
         #expect(apt.yesterdayViews == 78)
+    }
+
+    @Test("Вычисляемое свойство yesterdayViews возвращает 0, если вчерашний день отсутствует, но находится в диапазоне истории")
+    func views_yesterdayViewsReturnsZeroWhenMissingButWithinRange() throws {
+        let apt = makeApartment()
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")!
+        var calendar = Calendar.current
+        calendar.timeZone = moscowTimeZone
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = moscowTimeZone
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
+        let yesterdayStr = formatter.string(from: yesterday)
+        
+        // Вчерашняя дата находится между позавчерашней и сегодняшней
+        let dayBeforeYesterday = calendar.date(byAdding: .day, value: -2, to: Date())!
+        let dayBeforeYesterdayStr = formatter.string(from: dayBeforeYesterday)
+        let todayStr = formatter.string(from: Date())
+        
+        apt.viewsHistoryJSON = """
+        {"days":[
+            {"date":"\(dayBeforeYesterdayStr)","views":10},
+            {"date":"\(todayStr)","views":20}
+        ]}
+        """
+        #expect(apt.yesterdayViews == 0)
     }
 
     @Test("Парсит просмотры из DOM Fallback с использованием селектора data-name")
@@ -530,9 +560,13 @@ struct FlipAnalyzerDemandTests {
     @Test("Использует точные просмотры за вчера из истории")
     func demand_yesterdayViewsFromHistory() {
         let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")!
+        var calendar = Calendar.current
+        calendar.timeZone = moscowTimeZone
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        formatter.timeZone = moscowTimeZone
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
@@ -547,9 +581,13 @@ struct FlipAnalyzerDemandTests {
     @Test("Игнорирует историю вчерашних просмотров, если отключена настройка useYesterdayViews")
     func demand_ignoresYesterdayViewsWhenDisabled() {
         let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")!
+        var calendar = Calendar.current
+        calendar.timeZone = moscowTimeZone
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        formatter.timeZone = moscowTimeZone
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
         let yesterdayStr = formatter.string(from: yesterday)
         
         apt.viewsHistoryJSON = """
@@ -564,8 +602,10 @@ struct FlipAnalyzerDemandTests {
     @Test("Использует скользящее среднее за последние 3 завершенных дня, если вчерашний день отсутствует")
     func demand_averageLast3CompletedDays() {
         let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")!
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = moscowTimeZone
         let todayStr = formatter.string(from: Date())
         
         // Вчерашнего дня нет, но есть позавчерашние 3 дня: 80, 100, 120 (среднее = 100)

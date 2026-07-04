@@ -303,12 +303,19 @@ private extension FlipAnalyzer {
             let days: [DayViews]
         }
         
+        // Настройка календаря и временной зоны Europe/Moscow для корректной работы с серверами Циан
+        let moscowTimeZone = TimeZone(identifier: "Europe/Moscow")
+        var calendar = Calendar.current
+        if let moscowTimeZone = moscowTimeZone {
+            calendar.timeZone = moscowTimeZone
+        }
+        
         // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории (или макс вчера/сегодня)
         if useYesterdayViews, let yesterday = apartment.yesterdayViews {
             // Вычисляем также сегодняшние просмотры с экстраполяцией для сравнения (берем максимум, чтобы не занижать спрос при росте)
             var todayExtrapolated: Double = 0.0
             if let viewsToday = apartment.viewsToday, viewsToday > 0 {
-                let hour = Calendar.current.component(.hour, from: referenceDate)
+                let hour = calendar.component(.hour, from: referenceDate)
                 let isEarlyMorning = (0..<8).contains(hour)
                 if isEarlyMorning {
                     todayExtrapolated = Double(viewsToday)
@@ -346,7 +353,7 @@ private extension FlipAnalyzer {
 
         // 3. Приоритет 3: Просмотры "за сегодня" с экстраполяцией (для новинок)
         if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
-            let hour = Calendar.current.component(.hour, from: referenceDate)
+            let hour = calendar.component(.hour, from: referenceDate)
             let isEarlyMorning = (0..<8).contains(hour)
             
             if extrapolateMorningViews {
@@ -380,6 +387,9 @@ private extension FlipAnalyzer {
             let dailyViews = history.days
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
+            if let moscowTimeZone = moscowTimeZone {
+                formatter.timeZone = moscowTimeZone
+            }
             let todayStr = formatter.string(from: referenceDate)
             
             // Исключаем сегодня (неполный день) и считаем среднее за последние 3 дня
