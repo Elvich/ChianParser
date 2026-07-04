@@ -15,6 +15,7 @@ struct ApartmentDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(AppContainer.self) private var container
+    @AppStorage("useYesterdayViews") private var useYesterdayViews: Bool = true
 
     // MARK: - AI Analysis state
 
@@ -393,9 +394,9 @@ struct ApartmentDetailView: View {
 
     @ViewBuilder
     private var statsHighlightView: some View {
-        if apartment.viewsTotal != nil || apartment.viewsToday != nil || apartment.yesterdayViews != nil {
+        if apartment.viewsTotal != nil || apartment.viewsToday != nil || (useYesterdayViews && apartment.yesterdayViews != nil) {
             HStack(spacing: 12) {
-                if let yesterday = apartment.yesterdayViews {
+                if useYesterdayViews, let yesterday = apartment.yesterdayViews {
                     Label("\(yesterday) вчера", systemImage: "arrow.uturn.backward.circle.fill")
                         .font(.caption)
                         .padding(.horizontal, 10)

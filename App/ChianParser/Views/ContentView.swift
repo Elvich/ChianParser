@@ -601,6 +601,7 @@ private struct ApartmentRow: View {
     let flipScore: FlipScoreResult
 
     @State private var isHovered = false
+    @AppStorage("useYesterdayViews") private var useYesterdayViews: Bool = true
 
     private var daysSinceLastSeen: Int {
         Calendar.current.dateComponents([.day], from: apartment.lastSeenInSearch, to: Date()).day ?? 0
