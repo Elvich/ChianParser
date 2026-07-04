@@ -503,7 +503,12 @@ final class CianDetailParser: @unchecked Sendable {
                 ?? (offerData["publishedDate"] as? String)
             if let dateStr = publishedDateStr {
                 let formatter = ISO8601DateFormatter()
-                apartment.publishedDate = formatter.date(from: dateStr)
+                if let date = formatter.date(from: dateStr) {
+                    apartment.publishedDate = date
+                } else {
+                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    apartment.publishedDate = formatter.date(from: dateStr)
+                }
             } else if let ts = (offerNode["addedTimestamp"] as? TimeInterval) ?? (offerData["addedTimestamp"] as? TimeInterval) {
                 apartment.publishedDate = Date(timeIntervalSince1970: ts)
             }
@@ -1002,7 +1007,12 @@ final class CianDetailParser: @unchecked Sendable {
             if let dateElement = try? doc.select("time[datetime]").first() {
                 if let dateStr = try? dateElement.attr("datetime") {
                     let formatter = ISO8601DateFormatter()
-                    apartment.publishedDate = formatter.date(from: dateStr)
+                    if let date = formatter.date(from: dateStr) {
+                        apartment.publishedDate = date
+                    } else {
+                        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                        apartment.publishedDate = formatter.date(from: dateStr)
+                    }
                 } else if let dateText = try? dateElement.text() {
                     print("  📅 Дата публикации (текст): \(dateText)")
                 }
