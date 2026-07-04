@@ -1,5 +1,3 @@
-import pytest
-from datetime import datetime
 from services.parser import (
     find_value_recursive,
     extract_district,
@@ -7,8 +5,9 @@ from services.parser import (
     parse_views_formatted_string,
     _parse_room_info,
     _parse_price,
-    _parse_metro_distance
+    _parse_metro_distance,
 )
+
 
 def test_find_value_recursive():
     data = {
@@ -16,11 +15,8 @@ def test_find_value_recursive():
         "nested": {
             "b": 2,
             "target": "found_me",
-            "list": [
-                {"c": 3},
-                {"target": "found_deep"}
-            ]
-        }
+            "list": [{"c": 3}, {"target": "found_deep"}],
+        },
     }
     assert find_value_recursive(data, "target") == "found_me"
     assert find_value_recursive(data, "b") == 2
@@ -49,7 +45,9 @@ def test_parse_views_formatted_string():
     assert today == 12
 
     # 2. Тонкие и неразрывные пробелы
-    total, today = parse_views_formatted_string("1\u00A0200\u202fпросмотров, 5\u00A0за сегодня")
+    total, today = parse_views_formatted_string(
+        "1\u00a0200\u202fпросмотров, 5\u00a0за сегодня"
+    )
     assert total == 1200
     assert today == 5
 
@@ -79,7 +77,6 @@ def test_parse_views_formatted_string():
     assert today is None
 
 
-
 def test_parse_room_info():
     info = _parse_room_info("2-комн. апартаменты, 54,3 м², 3/10 этаж")
     assert info["rooms"] == 2
@@ -101,7 +98,7 @@ def test_parse_room_info():
 
 def test_parse_price():
     assert _parse_price("15 000 000 ₽") == 15000000.0
-    assert _parse_price("350\u00A0000\u202f₽/мес.") == 350000.0
+    assert _parse_price("350\u00a0000\u202f₽/мес.") == 350000.0
     assert _parse_price("цена договорная") == 0.0
 
 

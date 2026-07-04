@@ -8,11 +8,12 @@ from models.schemas import UserEventCreate
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+
 @router.post("/events", response_model=UserEvent, status_code=status.HTTP_201_CREATED)
 async def create_analytics_event(
     payload: UserEventCreate,
     session: AsyncSession = Depends(get_session),
-    _api_key: str = Depends(verify_api_key)
+    _api_key: str = Depends(verify_api_key),
 ) -> UserEvent:
     """
     Записывает новое событие аналитики (просмотр, лайк, дизлайк квартиры) в базу данных.
@@ -20,11 +21,11 @@ async def create_analytics_event(
     db_event = UserEvent(
         event_type=payload.event_type,
         apartment_id=payload.apartment_id,
-        payload=payload.payload or {}
+        payload=payload.payload or {},
     )
-    
+
     session.add(db_event)
     await session.commit()
     await session.refresh(db_event)
-    
+
     return db_event

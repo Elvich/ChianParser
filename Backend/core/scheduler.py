@@ -9,23 +9,25 @@ logger.setLevel(logging.INFO)
 
 scheduler = AsyncIOScheduler()
 
+
 def start_scheduler() -> None:
     """
     Запускает планировщик фоновых задач.
     Настраивает запуск стелс-парсера 3 раза в день (в 9:00, 15:00 и 21:00).
     """
     logger.info("⏰ Инициализация планировщика задач...")
-    
+
     # Добавляем задачу парсинга в 9:00, 15:00 и 21:00
     scheduler.add_job(
         run_stealth_parser,
         trigger=CronTrigger(hour="9,15,21", minute="0", second="0"),
         id="stealth_parser_job",
-        replace_existing=True
+        replace_existing=True,
     )
-    
+
     scheduler.start()
     logger.info("⏰ Планировщик фоновых задач успешно запущен")
+
 
 def shutdown_scheduler() -> None:
     """

@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger("chianparser.selectors_manager")
 
+
 class SelectorsManager:
     _instance = None
     _config = None
@@ -21,18 +22,24 @@ class SelectorsManager:
     def reload_config(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(current_dir, "selectors_config.json")
-        
+
         if not os.path.exists(config_path):
-            logger.warning("⚠️ selectors_config.json not found, using hardcoded fallback config")
+            logger.warning(
+                "⚠️ selectors_config.json not found, using hardcoded fallback config"
+            )
             self._config = self._get_fallback_config()
             return
 
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 self._config = json.load(f)
-            logger.info("✅ Successfully loaded HTML/CSS selectors from selectors_config.json")
+            logger.info(
+                "✅ Successfully loaded HTML/CSS selectors from selectors_config.json"
+            )
         except Exception as e:
-            logger.error(f"❌ Failed to decode selectors_config.json: {e}. Falling back to defaults.")
+            logger.error(
+                f"❌ Failed to decode selectors_config.json: {e}. Falling back to defaults."
+            )
             self._config = self._get_fallback_config()
 
     @property
@@ -50,7 +57,7 @@ class SelectorsManager:
                 "titleKeys": ["TitleComponent", "OfferTitle"],
                 "priceKeys": ["MainPrice", "ContentRow"],
                 "geoKeys": ["GeoLabel"],
-                "metroKeys": ["SpecialGeo"]
+                "metroKeys": ["SpecialGeo"],
             },
             "detail": {
                 "jsonSelectors": [
@@ -58,13 +65,13 @@ class SelectorsManager:
                     "script[type='application/json']",
                     "script[id*='__']",
                     "script:containsData(offerData)",
-                    "script:containsData(cianAd)"
+                    "script:containsData(cianAd)",
                 ],
                 "mainCharacteristicsSelectors": [
                     "[data-name='OfferSummaryInfoItem']",
                     "[data-testid='object-summary-info-item']",
                     ".a10a3f92e9--item--_ipjK",
-                    "[class*='item']"
+                    "[class*='item']",
                 ],
                 "mainCharacteristicsTitleSelector": "[data-mark='OfferSummaryInfoItem/Title']",
                 "mainCharacteristicsValueSelector": "[data-mark='OfferSummaryInfoItem/Value']",
@@ -73,27 +80,28 @@ class SelectorsManager:
                     "[data-name='Description']",
                     "[itemprop='description']",
                     ".description_text",
-                    "[class*='description']"
+                    "[class*='description']",
                 ],
                 "addressSelectors": [
                     "[data-name='Geo']",
                     "[itemprop='address']",
                     "[class*='address']",
-                    "h1[itemprop='name']"
+                    "h1[itemprop='name']",
                 ],
                 "metroSelectors": [
                     "[data-name='UndergroundStation']",
                     "[class*='underground']",
                     "[class*='metro']",
-                    "a[href*='metro']"
+                    "a[href*='metro']",
                 ],
                 "sellerSelectors": [
                     "[data-automation='agent-info']",
                     "[data-automation='seller-info']",
                     "[class*='--agent-info--']",
-                    "[class*='--owner-info--']"
-                ]
-            }
+                    "[class*='--owner-info--']",
+                ],
+            },
         }
+
 
 selectors_manager = SelectorsManager()

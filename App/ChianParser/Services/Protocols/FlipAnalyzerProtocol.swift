@@ -7,7 +7,7 @@ import Foundation
 
 protocol FlipAnalyzerProtocol: Sendable {
     /// Analyze a single apartment given a pre-computed benchmark context.
-    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult
+    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds, referenceDate: Date) -> FlipScoreResult
 
     /// Build a benchmark context from a collection of apartments using the target percentile (e.g. 0.8 for 80th percentile).
     func buildBenchmark(from apartments: [Apartment], targetPercentile: Double) -> BenchmarkContext
@@ -18,6 +18,12 @@ protocol FlipAnalyzerProtocol: Sendable {
     /// Extract the Moscow district (район) name from an address string (e.g. "Арбат", "Чертаново Северное").
     /// Returns nil when the address does not contain a "р-н …" fragment.
     nonisolated func extractDistrict(from address: String) -> String?
+}
+
+extension FlipAnalyzerProtocol {
+    nonisolated func analyze(apartment: Apartment, benchmark: BenchmarkContext, thresholds: DemandThresholds) -> FlipScoreResult {
+        analyze(apartment: apartment, benchmark: benchmark, thresholds: thresholds, referenceDate: Date())
+    }
 }
 
 /// Pre-computed market benchmark derived from a DB snapshot.
