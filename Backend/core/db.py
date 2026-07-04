@@ -74,6 +74,7 @@ def migrate_db(connection) -> None:
         ('promotion_type', 'VARCHAR'),
         ('okrug', 'VARCHAR'),
         ('district', 'VARCHAR'),
+        ('views_history_json', 'TEXT'),
     ]
     
     for col_name, col_type in new_cols:

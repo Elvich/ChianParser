@@ -58,7 +58,10 @@ struct ContentBody: View {
     @AppStorage("districtModeEnabled")          private var districtModeEnabled: Bool = false
     @AppStorage("benchmarkMode")                private var benchmarkMode: BenchmarkMode = .okrug
     @AppStorage(DistrictRanking.scoresKey)      private var districtScoresJSON: String = DistrictRanking.defaultScoresJSON
-
+    
+    // WebSocket settings
+    @AppStorage("isWebSocketNodeEnabled") private var isWebSocketNodeEnabled: Bool = false
+    
     // Parser settings from AppStorage (shared with SettingsView → Парсинг tab)
     @AppStorage("parserAutoDetail")        private var autoDetail: Bool = true
     @AppStorage("parserAutoCheck")         private var autoCheck: Bool = true
@@ -145,6 +148,12 @@ struct ContentBody: View {
             .onChange(of: minBuildingFloors) { _, v in
                 viewModel.filterCoordinator.minBuildingFloors = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: isWebSocketNodeEnabled) { _, newValue in
+                container.webSocketNodeService.connectIfNeeded(isEnabled: newValue)
+            }
+            .onAppear {
+                container.webSocketNodeService.connectIfNeeded(isEnabled: isWebSocketNodeEnabled)
             }
     }
 

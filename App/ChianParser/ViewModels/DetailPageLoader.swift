@@ -260,67 +260,158 @@ extension DetailPageLoader: WKNavigationDelegate {
             try? await Task.sleep(nanoseconds: 4_000_000_000) // 4 seconds
 
             let jsExtractJSON = """
-            (function() {
+            (async function() {
+                // 1. Извлекаем offerId из URL
+                var offerId = "";
+                var urlMatch = window.location.href.match(/\\/(\\d+)\\/?/);
+                if (urlMatch && urlMatch[1]) {
+                    offerId = urlMatch[1];
+                }
+
+                // 2. Извлекаем publishedDate
+                var publishedDate = "";
+                var timeElem = document.querySelector('time[datetime]');
+                if (timeElem) {
+                    publishedDate = timeElem.getAttribute('datetime') || "";
+                }
+                if (!publishedDate) {
+                    try {
+                        var nextData = window.__NEXT_DATA__;
+                        var ps = nextData && nextData.props && nextData.props.pageProps && nextData.props.pageProps.initialState;
+                        var offerData = ps && (ps.offerCard && ps.offerCard.offerData || ps.offer && ps.offer.offerData);
+                        var offer = offerData && (offerData.offer || offerData);
+                        if (offer && offer.publishedDate) {
+                            publishedDate = offer.publishedDate;
+                        }
+                    } catch(e) {}
+                }
+
+                // 3. Выполняем fetch детальной статистики
+                var viewsHistory = null;
+                if (offerId && publishedDate) {
+                    try {
+                        var statsUrl = 'https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate=' + encodeURIComponent(publishedDate) + '&offerId=' + offerId;
+                        var response = await fetch(statsUrl);
+                        if (response.ok) {
+                            viewsHistory = await response.text();
+                        }
+                    } catch(e) {
+                        console.error("Fetch views history failed:", e);
+                    }
+                }
+
                 // Helper: extract views string from DOM text (e.g. "1507 просмотров, 7 за сегодня")
                 function extractViewsFromDOM() {
                     try {
                         var allText = document.body ? document.body.innerText : '';
-                        var match = allText.match(/(\\d[\\d\\s\\u00A0]*\\d|\\d)\\s*просмотр[^,·\\n]*[,·]\\s*(\\d+)\\s*за сегодня/i);
-                        if (match) return { totalViews: match[1].replace(/\\D/g,''), todayViews: match[2] };
+                        var totalMatch = allText.match(/(\\d[\\d\\s\\u00A0]*\\d|\\d)\\s*просмотр/i);
+                        var todayMatch = allText.match(/(\\d+)\\s*за сегодня/i);
+                        var noTodayMatch = allText.match(/нет\\s*за сегодня/i);
+                        
+                        var totalViews = totalMatch ? totalMatch[1].replace(/\\D/g,'') : null;
+                        var todayViews = null;
+                        if (todayMatch) {
+                            todayViews = todayMatch[1];
+                        } else if (noTodayMatch) {
+                            todayViews = "0";
+                        }
+                        
+                        if (totalViews !== null || todayViews !== null) {
+                            return { totalViews: totalViews, todayViews: todayViews };
+                        }
                     } catch(e) {}
                     return null;
                 }
 
-                // Helper: inject DOM views into a parsed JSON object
-                function injectDOMViews(jsonObj) {
+                // Helper: inject DOM views and viewsHistory into a parsed JSON object
+                function injectDOMViewsAndHistory(jsonObj) {
                     var domViews = extractViewsFromDOM();
-                    if (!domViews) return jsonObj;
                     try {
                         var obj = JSON.parse(jsonObj);
-                        // Walk into offer stats and inject
-                        var ps = obj && obj.props && obj.props.pageProps && obj.props.pageProps.initialState;
-                        var offerData = ps && (ps.offerCard && ps.offerCard.offerData || ps.offer && ps.offer.offerData);
-                        if (!offerData) {
-                            // Store DOM views in a top-level sentinel for the Swift parser
-                            obj.__domViewsTotal = parseInt(domViews.totalViews);
-                            obj.__domViewsToday = parseInt(domViews.todayViews);
-                            return JSON.stringify(obj);
+                        
+                        // Внедряем viewsHistory
+                        if (viewsHistory !== null) {
+                            obj.__viewsHistory = viewsHistory;
                         }
-                        var offer = offerData.offer || offerData;
-                        if (!offer.stats) offer.stats = {};
-                        if (!offer.stats.total) offer.stats.total = parseInt(domViews.totalViews);
-                        if (!offer.stats.daily) offer.stats.daily = parseInt(domViews.todayViews);
-                        offer.stats.totalViewsFormattedString = domViews.totalViews + ' просмотров · ' + domViews.todayViews + ' за сегодня';
+                        
+                        if (domViews) {
+                            var ps = obj && obj.props && obj.props.pageProps && obj.props.pageProps.initialState;
+                            var offerData = ps && (ps.offerCard && ps.offerCard.offerData || ps.offer && ps.offer.offerData);
+                            if (!offerData) {
+                                // Store DOM views in a top-level sentinel for the Swift parser
+                                if (domViews.totalViews !== null) obj.__domViewsTotal = parseInt(domViews.totalViews);
+                                if (domViews.todayViews !== null) obj.__domViewsToday = parseInt(domViews.todayViews);
+                            } else {
+                                var offer = offerData.offer || offerData;
+                                if (!offer.stats) offer.stats = {};
+                                if (domViews.totalViews !== null) offer.stats.total = parseInt(domViews.totalViews);
+                                if (domViews.todayViews !== null) offer.stats.daily = parseInt(domViews.todayViews);
+                                
+                                var totalStr = domViews.totalViews !== null ? domViews.totalViews + ' просмотров' : '';
+                                var todayStr = domViews.todayViews !== null ? (domViews.todayViews === '0' ? 'нет за сегодня' : domViews.todayViews + ' за сегодня') : '';
+                                if (totalStr && todayStr) {
+                                    offer.stats.totalViewsFormattedString = totalStr + ' · ' + todayStr;
+                                } else {
+                                    offer.stats.totalViewsFormattedString = totalStr || todayStr;
+                                }
+                            }
+                        }
                         return JSON.stringify(obj);
-                    } catch(e) { return jsonObj; }
-                }
-
-                try {
-                    if (window.__NEXT_DATA__) return injectDOMViews(JSON.stringify(window.__NEXT_DATA__));
-                } catch(e) {}
-                try {
-                    if (window._cianConfig) return injectDOMViews(JSON.stringify(window._cianConfig));
-                } catch(e) {}
-                try {
-                    var scripts = Array.from(document.querySelectorAll('script'));
-                    for (var s of scripts) {
-                        var t = s.textContent || '';
-                        if (t.length > 500 && t.indexOf('"offerData"') >= 0) {
-                            var start = t.indexOf('{');
-                            if (start >= 0) return injectDOMViews(t.substring(start));
+                    } catch(e) { 
+                        try {
+                            var fallbackObj = { original: jsonObj };
+                            if (viewsHistory !== null) fallbackObj.__viewsHistory = viewsHistory;
+                            if (domViews) {
+                                if (domViews.totalViews !== null) fallbackObj.__domViewsTotal = parseInt(domViews.totalViews);
+                                if (domViews.todayViews !== null) fallbackObj.__domViewsToday = parseInt(domViews.todayViews);
+                            }
+                            return JSON.stringify(fallbackObj);
+                        } catch(e2) {
+                            return jsonObj;
                         }
                     }
-                } catch(e) {}
-
-                // Last resort: return only DOM views as minimal JSON
-                var domViews = extractViewsFromDOM();
-                if (domViews) {
-                    return JSON.stringify({
-                        __domViewsTotal: parseInt(domViews.totalViews),
-                        __domViewsToday: parseInt(domViews.todayViews)
-                    });
                 }
-                return null;
+
+                var rawResult = null;
+                try {
+                    if (window.__NEXT_DATA__) rawResult = JSON.stringify(window.__NEXT_DATA__);
+                } catch(e) {}
+                if (!rawResult) {
+                    try {
+                        if (window._cianConfig) rawResult = JSON.stringify(window._cianConfig);
+                    } catch(e) {}
+                }
+                if (!rawResult) {
+                    try {
+                        var scripts = Array.from(document.querySelectorAll('script'));
+                        for (var s of scripts) {
+                            var t = s.textContent || '';
+                            if (t.length > 500 && t.indexOf('"offerData"') >= 0) {
+                                var start = t.indexOf('{');
+                                if (start >= 0) {
+                                    rawResult = t.substring(start);
+                                    break;
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+
+                if (rawResult) {
+                    return injectDOMViewsAndHistory(rawResult);
+                }
+
+                // Last resort: return only DOM views and history as minimal JSON
+                var domViews = extractViewsFromDOM();
+                var minimalObj = {};
+                if (viewsHistory !== null) {
+                    minimalObj.__viewsHistory = viewsHistory;
+                }
+                if (domViews) {
+                    if (domViews.totalViews !== null) minimalObj.__domViewsTotal = parseInt(domViews.totalViews);
+                    if (domViews.todayViews !== null) minimalObj.__domViewsToday = parseInt(domViews.todayViews);
+                }
+                return JSON.stringify(minimalObj);
             })();
             """
 

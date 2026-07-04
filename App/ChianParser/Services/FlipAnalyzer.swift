@@ -287,31 +287,59 @@ private extension FlipAnalyzer {
     nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true, referenceDate: Date = Date()) -> (DemandLevel, Double?) {
         var rawPerDay: Double? = nil
         
-        // 1. Приоритет: честная дельта (скользящее окно) за последние N часов
-        if let prevTotal = apartment.previousViewsTotal,
-           let prevDate = apartment.previousViewsDate,
-           let currentTotal = apartment.viewsTotal {
-            let hoursPassed = referenceDate.timeIntervalSince(prevDate) / 3600.0
-            if hoursPassed > 12.0 {
-                let deltaViews = currentTotal - prevTotal
-                if deltaViews >= 0 {
-                    rawPerDay = Double(deltaViews) / (hoursPassed / 24.0)
+        // Вспомогательные DTO для парсинга истории просмотров
+        struct CianViewsHistoryDTO: Codable {
+            struct Daily: Codable {
+                struct DayViews: Codable {
+                    let date: String
+                    let views: Int
+                }
+                let dailyViews: [DayViews]
+            }
+            let daily: Daily
+        }
+        
+        // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории
+        if let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
+           let data = historyJSON.data(using: .utf8),
+           let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
+            let dailyViews = history.daily.dailyViews
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: referenceDate) ?? referenceDate.addingTimeInterval(-86400)
+            let yesterdayStr = formatter.string(from: yesterdayDate)
+            
+            if let yesterdayViews = dailyViews.first(where: { $0.date == yesterdayStr }) {
+                rawPerDay = Double(yesterdayViews.views)
+            }
+        }
+        
+        // 2. Приоритет 2: Честная дельта общего счетчика за последние N часов (скользящее окно)
+        if rawPerDay == nil {
+            if let prevTotal = apartment.previousViewsTotal,
+               let prevDate = apartment.previousViewsDate,
+               let currentTotal = apartment.viewsTotal {
+                let hoursPassed = referenceDate.timeIntervalSince(prevDate) / 3600.0
+                if hoursPassed > 12.0 {
+                    let deltaViews = currentTotal - prevTotal
+                    if deltaViews >= 0 {
+                        rawPerDay = Double(deltaViews) / (hoursPassed / 24.0)
+                    }
                 }
             }
         }
 
-        // 2. Фолбэк 1: Просмотры "за сегодня" (от Циана)
+        // 3. Приоритет 3: Просмотры "за сегодня" с экстраполяцией (для новинок)
         if rawPerDay == nil, let viewsToday = apartment.viewsToday, viewsToday > 0 {
             let hour = Calendar.current.component(.hour, from: referenceDate)
             let isEarlyMorning = (0..<8).contains(hour)
             
             if extrapolateMorningViews {
                 if isEarlyMorning {
-                    // Раннее утро (с 00:00 до 08:00): экстраполяция автоматически отключается (безопасный фолбэк)
+                    // Раннее утро (с 00:00 до 08:00): экстраполяция автоматически отключается
                     rawPerDay = Double(viewsToday)
                 } else {
-                    // Накопленный процент суточных просмотров по часам (аппроксимация активности)
-                    // 0: 0%, 4: 3%, 8: 10%, 12: 38%, 16: 66%, 20: 90%, 24: 100%
+                    // Накопленный процент суточных просмотров по часам
                     let distribution: [Double] = [
                         0.0, 0.01, 0.02, 0.02, 0.03, 0.03, 0.04, 0.06, 0.10, 0.15, 0.22, 0.30, 0.38,
                         0.45, 0.52, 0.59, 0.66, 0.73, 0.79, 0.85, 0.90, 0.94, 0.97, 0.99, 1.0
@@ -319,7 +347,6 @@ private extension FlipAnalyzer {
                     let h = max(0, min(24, hour))
                     let percentage = distribution[h]
                     
-                    // Если процент просмотров достаточный (начиная с 8 утра, >= 10%), выполняем экстраполяцию
                     if percentage >= 0.10 {
                         rawPerDay = Double(viewsToday) / percentage
                     } else {
@@ -331,19 +358,32 @@ private extension FlipAnalyzer {
             }
         }
         
-        // 3. Фолбэк 2: Среднее значение за всё время жизни объявления
+        // 4. Приоритет 4: Среднее арифметическое просмотров за последние 3 завершенных дня из истории
+        if rawPerDay == nil, let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
+           let data = historyJSON.data(using: .utf8),
+           let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
+            let dailyViews = history.daily.dailyViews
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let todayStr = formatter.string(from: referenceDate)
+            
+            // Исключаем сегодня (неполный день) и считаем среднее за последние 3 дня
+            let completedDays = dailyViews.filter { $0.date != todayStr }
+            let lastNDays = completedDays.suffix(3)
+            if !lastNDays.isEmpty {
+                let sum = lastNDays.reduce(0) { $0 + $1.views }
+                rawPerDay = Double(sum) / Double(lastNDays.count)
+            }
+        }
+        
+        // 5. Приоритет 5: Среднее значение за всё время жизни объявления (Legacy fallback)
         if rawPerDay == nil, let total = apartment.viewsTotal, total > 0, let published = apartment.publishedDate {
             let actualDays = referenceDate.timeIntervalSince(published) / 86400.0
             
             if actualDays > 3.0 {
-                // Если объявление старше 3 дней, экстраполяция новизны отключается
                 let days = max(1.0, actualDays)
                 rawPerDay = Double(total) / days
             } else {
-                // Квартира новая (опубликована менее 3 дней назад).
-                // Применяем экстраполяцию просмотров пропорционально времени жизни объявления.
-                // Чтобы избежать нереалистичных выбросов на сверхновых объявлениях,
-                // минимальное время жизни для экстраполяции — 2 часа (2.0 / 24.0 дня).
                 let minDays = 2.0 / 24.0
                 let effectiveDays = max(minDays, actualDays)
                 rawPerDay = Double(total) / effectiveDays

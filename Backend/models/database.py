@@ -62,6 +62,7 @@ class Apartment(SQLModel, table=True):
     views_today: Optional[int] = Field(default=None, nullable=True)
     views_total: Optional[int] = Field(default=None, nullable=True)
     published_date: Optional[datetime] = Field(default=None, nullable=True)
+    views_history_json: Optional[str] = Field(default=None, nullable=True)
     
     # Снэпшот для вычисления честного спроса (Дельта)
     previous_views_total: Optional[int] = Field(default=None, nullable=True)
@@ -139,5 +140,22 @@ class UserEvent(SQLModel, table=True):
     
     # Дополнительные данные события в формате JSON
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class User(SQLModel, table=True):
+    """
+    Модель пользователя (клиента-парсера).
+    Используется для аутентификации узлов распределенного парсинга.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True, nullable=False)
+    token: Optional[str] = Field(default=None, index=True, nullable=True) # Токен для подключения
+    is_active: bool = Field(default=True, nullable=False)
+    
+    # Статистика парсинга
+    tasks_completed: int = Field(default=0, nullable=False)
+    last_seen_at: Optional[datetime] = Field(default=None, nullable=True)
     
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

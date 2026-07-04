@@ -55,10 +55,18 @@ final class Apartment {
     var viewsToday: Int?        // Просмотров сегодня
     var viewsTotal: Int?        // Просмотров всего
     var publishedDate: Date?    // Дата публикации объявления
+    var viewsHistoryJSON: String? // Детальная статистика просмотров (JSON)
     
     // Снэпшот для вычисления честного спроса за день (Дельта)
     var previousViewsTotal: Int?
     var previousViewsDate: Date?
+    
+    // Флиппинг-калькулятор (моки с сервера)
+    var repairCost: Int?
+    var targetSellPrice: Int?
+    var taxes: Int?
+    var netProfit: Int?
+    var roi: Double?
     
     // Флаг детального парсинга
     var isDetailedParsed: Bool = false // Был ли выполнен детальный парсинг

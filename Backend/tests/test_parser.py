@@ -63,6 +63,22 @@ def test_parse_views_formatted_string():
     assert total is None
     assert today is None
 
+    # 5. С фразой "нет за сегодня"
+    total, today = parse_views_formatted_string("1 450 просмотров, нет за сегодня")
+    assert total == 1450
+    assert today == 0
+
+    # 6. Только "нет за сегодня"
+    total, today = parse_views_formatted_string("нет за сегодня")
+    assert total is None
+    assert today == 0
+
+    # 7. Без сегодняшних просмотров вообще
+    total, today = parse_views_formatted_string("1 450 просмотров")
+    assert total == 1450
+    assert today is None
+
+
 
 def test_parse_room_info():
     info = _parse_room_info("2-комн. апартаменты, 54,3 м², 3/10 этаж")

@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from api.routes import appcast, health, updates, apartments, scoring, analytics, recommendations
+from api.routes import appcast, health, updates, apartments, scoring, analytics, recommendations, websocket
 from core.db import init_db
 from core.scheduler import start_scheduler, shutdown_scheduler
 
@@ -37,3 +37,4 @@ app.include_router(apartments.router, prefix="/api/v1")
 app.include_router(scoring.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(recommendations.router, prefix="/api/v1")
+app.include_router(websocket.router)

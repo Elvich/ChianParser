@@ -27,6 +27,12 @@ final class CianDetailParser: @unchecked Sendable {
         let oldViewsTotal = apartment.viewsTotal
         let oldLastUpdate = apartment.lastUpdate
         
+        if let jsonData = jsonString.data(using: .utf8),
+           let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+           let viewsHistory = jsonObject["__viewsHistory"] as? String {
+            apartment.viewsHistoryJSON = viewsHistory
+        }
+        
         let wrappedHTML = "<html><head><script id=\"__NEXT_DATA__\" type=\"application/json\">\(jsonString)</script></head><body></body></html>"
         if tryExtractFromJSON(html: wrappedHTML, apartment: apartment) {
             applyTitleFallback(apartment: apartment)
@@ -533,24 +539,32 @@ final class CianDetailParser: @unchecked Sendable {
     }
     
     private func parseViewsFormattedString(_ text: String, apartment: Apartment) {
-        let fullPattern = "(\\d[\\d \\u00A0]*\\d|\\d)\\s*просмотр[^,·\\n]*[,·]\\s*(\\d+)\\s*за сегодня"
-        if let regex = try? NSRegularExpression(pattern: fullPattern, options: .caseInsensitive),
-           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
-            if apartment.viewsTotal == nil, let totalRange = Range(match.range(at: 1), in: text) {
-                apartment.viewsTotal = Int(String(text[totalRange]).filter(\.isNumber))
-            }
-            if apartment.viewsToday == nil, let todayRange = Range(match.range(at: 2), in: text) {
-                apartment.viewsToday = Int(text[todayRange])
-            }
-            return
+        // 1. Извлечение общего количества просмотров
+        let totalPattern = "(\\d[\\d \\u00A0]*)\\s*просмотр"
+        if apartment.viewsTotal == nil,
+           let regex = try? NSRegularExpression(pattern: totalPattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let totalRange = Range(match.range(at: 1), in: text) {
+            let totalStr = String(text[totalRange]).filter(\.isNumber)
+            apartment.viewsTotal = Int(totalStr)
         }
-
-        let todayOnlyPattern = "(\\d+)\\s*за сегодня"
+        
+        // 2. Извлечение сегодняшних просмотров
+        // Вариант А: число за сегодня
+        let todayPattern = "(\\d+)\\s*за сегодня"
         if apartment.viewsToday == nil,
-           let regex = try? NSRegularExpression(pattern: todayOnlyPattern, options: .caseInsensitive),
+           let regex = try? NSRegularExpression(pattern: todayPattern, options: .caseInsensitive),
            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
            let todayRange = Range(match.range(at: 1), in: text) {
             apartment.viewsToday = Int(text[todayRange])
+        }
+        
+        // Вариант Б: фраза "нет за сегодня" (интерпретируется как 0)
+        let noTodayPattern = "нет\\s*за сегодня"
+        if apartment.viewsToday == nil,
+           let regex = try? NSRegularExpression(pattern: noTodayPattern, options: .caseInsensitive),
+           let _ = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+            apartment.viewsToday = 0
         }
     }
     
@@ -933,6 +947,56 @@ final class CianDetailParser: @unchecked Sendable {
         }
     }
     
+    /// Дополнительный парсинг просмотров из DOM (если они не были найдены в JSON)
+    private func parseViewsDOMFallback(from doc: Document, apartment: Apartment) {
+        if apartment.viewsTotal != nil && apartment.viewsToday != nil {
+            return
+        }
+        
+        print("  🔍 DOM Fallback: Поиск просмотров в HTML...")
+        
+        // 1. Поиск по специфическим селекторам атрибутов
+        let attributeSelectors = [
+            "[data-name*='views']",
+            "[data-name*='Views']",
+            "[data-name*='stats']",
+            "[data-name*='Stats']",
+            "[class*='views']",
+            "[class*='Views']",
+            "[class*='stats']",
+            "[class*='Stats']"
+        ]
+        
+        for selector in attributeSelectors {
+            if let elements = try? doc.select(selector) {
+                for element in elements {
+                    if let text = try? element.text(), !text.isEmpty {
+                        parseViewsFormattedString(text, apartment: apartment)
+                        if apartment.viewsTotal != nil && apartment.viewsToday != nil {
+                            print("  ✓ Просмотры успешно найдены по селектору '\(selector)': \(text)")
+                            return
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 2. Поиск по всему текстовому содержимому страницы
+        if apartment.viewsTotal == nil || apartment.viewsToday == nil {
+            if let pageText = try? doc.text(), !pageText.isEmpty {
+                parseViewsFormattedString(pageText, apartment: apartment)
+                if apartment.viewsTotal != nil || apartment.viewsToday != nil {
+                    print("  ✓ Просмотры частично или полностью найдены в тексте страницы")
+                }
+            } else if let bodyText = try? doc.body()?.text(), !bodyText.isEmpty {
+                parseViewsFormattedString(bodyText, apartment: apartment)
+                if apartment.viewsTotal != nil || apartment.viewsToday != nil {
+                    print("  ✓ Просмотры частично или полностью найдены в теле страницы")
+                }
+            }
+        }
+    }
+
     private func parseStatistics(from doc: Document, apartment: Apartment) {
         if apartment.publishedDate == nil {
             if let dateElement = try? doc.select("time[datetime]").first() {
@@ -944,6 +1008,9 @@ final class CianDetailParser: @unchecked Sendable {
                 }
             }
         }
+        
+        // Вызов DOM Fallback парсинга просмотров
+        parseViewsDOMFallback(from: doc, apartment: apartment)
     }
     
     private func parseSellerInfo(from doc: Document, apartment: Apartment) {

@@ -179,28 +179,42 @@ def extract_okrug(address: str) -> str:
 
 def parse_views_formatted_string(text: str) -> tuple[Optional[int], Optional[int]]:
     """
-    Разбирает строку просмотров Циан вида «148 просмотров, 2 за сегодня» или «2 за сегодня».
+    Разбирает строку просмотров Циан вида «148 просмотров, 2 за сегодня» или «нет за сегодня».
+    Поддерживает фразу «нет за сегодня» (интерпретируя её как 0) и извлекает
+    общее число просмотров, даже если сегодняшние просмотры отсутствуют.
     """
     total = None
     today = None
     
-    m = re.search(r"(\d[\d\s\xa0]*\d|\d)\s*просмотр[^,·\n]*[,·]\s*(\d+)\s*за сегодня", text, re.IGNORECASE)
-    if m:
+    if not text:
+        return total, today
+
+    # Нормализуем пробельные символы (включая неразрывные пробелы)
+    cleaned_text = re.sub(r"[\s\xa0\u202f]+", " ", text).strip()
+
+    # 1. Поиск общего количества просмотров
+    total_match = re.search(r"(\d[\d\s]*)\s*просмотр", cleaned_text, re.IGNORECASE)
+    if total_match:
         try:
-            total = int(re.sub(r"[\s\xa0]", "", m.group(1)))
-            today = int(m.group(2))
-            return total, today
+            total_cleaned = re.sub(r"\s", "", total_match.group(1))
+            total = int(total_cleaned)
         except Exception:
             pass
-            
-    m = re.search(r"(\d+)\s*за сегодня", text, re.IGNORECASE)
-    if m:
-        try:
-            today = int(m.group(1))
-        except Exception:
-            pass
-            
+
+    # 2. Поиск сегодняшних просмотров
+    today_match = re.search(r"(\d+|нет)\s*за сегодня", cleaned_text, re.IGNORECASE)
+    if today_match:
+        today_str = today_match.group(1).lower()
+        if today_str == "нет":
+            today = 0
+        else:
+            try:
+                today = int(today_str)
+            except Exception:
+                pass
+
     return total, today
+
 
 
 def _parse_room_info(text: str) -> dict:
@@ -442,9 +456,18 @@ async def parse_detail_page(page, cian_id: str) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         # Небольшая задержка, имитирующая пользователя
         await page.wait_for_timeout(2500)
+        
+        # Динамическое ожидание загрузки блока статистики
+        try:
+            await page.get_by_text(re.compile("просмотр", re.IGNORECASE)).first.wait_for(state="attached", timeout=5000)
+            logger.info(f"📊 Блок статистики просмотров успешно загружен на странице {cian_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Не дождались загрузки блока статистики (текст 'просмотр') для {cian_id}: {e}")
+            
     except Exception as e:
         logger.warning(f"⚠️ Не удалось загрузить детальную страницу {cian_id}: {e}")
         return {}
+
         
     detail_data = {}
     
@@ -751,12 +774,114 @@ async def parse_detail_page(page, cian_id: str) -> dict:
             if "апартамент" in desc_lower: detail_data["is_apartment"] = True
             if "доля" in desc_lower: detail_data["is_share"] = True
             
+        # DOM Fallback для просмотров
+        if not detail_data.get("views_total") or not detail_data.get("views_today"):
+            logger.info(f"🔄 Запуск DOM Fallback для извлечения просмотров (cian_id: {cian_id})...")
+            fallback_selectors = ['[data-name*="Views"]', '[data-name*="Stats"]']
+            views_found = False
+            for selector in fallback_selectors:
+                loc = page.locator(selector)
+                count = await loc.count()
+                for i in range(count):
+                    try:
+                        text = await loc.nth(i).inner_text()
+                        if text:
+                            total, today = parse_views_formatted_string(text)
+                            if total is not None:
+                                detail_data["views_total"] = total
+                                views_found = True
+                            if today is not None:
+                                detail_data["views_today"] = today
+                                views_found = True
+                            if views_found:
+                                logger.info(f"📊 Просмотры найдены через селектор {selector}: {text} -> total: {total}, today: {today}")
+                                break
+                    except Exception as ex:
+                        logger.warning(f"Ошибка при разборе текста из селектора {selector}: {ex}")
+                if views_found:
+                    break
+
+            # Попытка поиска по текстовому содержимому всей страницы (BeautifulSoup)
+            if not detail_data.get("views_total") or not detail_data.get("views_today"):
+                try:
+                    from bs4 import BeautifulSoup
+                    html_content = await page.content()
+                    soup = BeautifulSoup(html_content, "html.parser")
+                    page_text = soup.get_text()
+                    lines = [line.strip() for line in page_text.split("\n") if line.strip()]
+                    for line in lines:
+                        if "просмотр" in line.lower() or "за сегодня" in line.lower():
+                            total, today = parse_views_formatted_string(line)
+                            if total is not None:
+                                detail_data["views_total"] = total
+                                views_found = True
+                            if today is not None:
+                                detail_data["views_today"] = today
+                                views_found = True
+                            if views_found:
+                                logger.info(f"📊 Просмотры найдены через BeautifulSoup get_text() построчно: {line} -> total: {total}, today: {today}")
+                                break
+
+                    # Резервный вариант на случай, если информация разбита переносами строк
+                    if not detail_data.get("views_total") or not detail_data.get("views_today"):
+                        single_line_text = re.sub(r"\s+", " ", page_text)
+                        match = re.search(r".{0,50}просмотр.{0,50}", single_line_text, re.IGNORECASE)
+                        if match:
+                            snippet = match.group(0)
+                            total, today = parse_views_formatted_string(snippet)
+                            if total is not None:
+                                detail_data["views_total"] = total
+                            if today is not None:
+                                detail_data["views_today"] = today
+                            logger.info(f"📊 Просмотры найдены в текстовом сниппете: {snippet} -> total: {total}, today: {today}")
+                except Exception as ex:
+                    logger.warning(f"⚠️ Ошибка при извлечении просмотров через BeautifulSoup: {ex}")
+
         if detail_data.get("address") or detail_data.get("description"):
             detail_data["is_detailed_parsed"] = True
+
             
     except Exception as e:
         logger.warning(f"⚠️ Ошибка разбора HTML селекторов для {cian_id}: {e}")
         
+    # Попытка определить дату создания из HTML, если её нет в detail_data
+    if not detail_data.get("published_date"):
+        try:
+            html_content = await page.content()
+            pub_match = re.search(r'"publishedDate"\s*:\s*"([^"]+)"', html_content)
+            if pub_match and len(pub_match.group(1)) >= 10:
+                detail_data["published_date"] = datetime.fromisoformat(pub_match.group(1).replace("Z", "+00:00"))
+            else:
+                ts_match = re.search(r'"addedTimestamp"\s*:\s*(\d+)', html_content)
+                if ts_match:
+                    detail_data["published_date"] = datetime.utcfromtimestamp(float(ts_match.group(1)))
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при поиске даты публикации в HTML для {cian_id}: {e}")
+
+    # Запрос детальной статистики просмотров в контексте Playwright
+    if "published_date" in detail_data and detail_data["published_date"]:
+        try:
+            date_str = detail_data["published_date"].strftime("%Y-%m-%d")
+            stat_url = f"https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate={date_str}&offerId={cian_id}"
+            logger.info(f"📊 Запрос детальной статистики просмотров для {cian_id}: {stat_url}")
+            
+            views_history = await page.evaluate("""async (url) => {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        return JSON.stringify({ error: `HTTP ${response.status}: ${response.statusText}` });
+                    }
+                    return await response.text();
+                } catch (e) {
+                    return JSON.stringify({ error: e.toString() });
+                }
+            }""", stat_url)
+            
+            detail_data["views_history_json"] = views_history
+            logger.info(f"✅ Получена детальная статистика просмотров для {cian_id}")
+        except Exception as ev:
+            logger.warning(f"⚠️ Не удалось загрузить детальную статистику просмотров для {cian_id} через evaluate: {ev}")
+
     return detail_data
 
 
@@ -975,6 +1100,7 @@ async def run_stealth_parser() -> None:
                         views_today=merged_data.get("views_today"),
                         views_total=merged_data.get("views_total"),
                         published_date=merged_data.get("published_date"),
+                        views_history_json=merged_data.get("views_history_json"),
                         is_studio=merged_data.get("is_studio", False),
                         is_apartment=merged_data.get("is_apartment", False),
                         is_auction=merged_data.get("is_auction", False),
@@ -1033,6 +1159,7 @@ async def run_stealth_parser() -> None:
                         apt.views_today = merged_data.get("views_today", apt.views_today)
                         apt.views_total = merged_data.get("views_total", apt.views_total)
                         apt.published_date = merged_data.get("published_date", apt.published_date)
+                        apt.views_history_json = merged_data.get("views_history_json", apt.views_history_json)
                         apt.is_studio = merged_data.get("is_studio", apt.is_studio)
                         apt.is_apartment = merged_data.get("is_apartment", apt.is_apartment)
                         apt.is_auction = merged_data.get("is_auction", apt.is_auction)

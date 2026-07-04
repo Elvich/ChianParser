@@ -45,6 +45,7 @@ struct ApartmentDetailView: View {
                     waitingConditionView
                     flipScoreView
                     currentPriceView
+                    financialCalculatorView
                     priceHistoryView
                     characteristicsGrid
                     descriptionView
@@ -650,6 +651,70 @@ struct ApartmentDetailView: View {
         .background(Color(.systemGray).opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
+    }
+
+    // MARK: - Финансовый калькулятор флиппинга
+    
+    @ViewBuilder
+    private var financialCalculatorView: some View {
+        if apartment.targetSellPrice != nil || apartment.repairCost != nil || apartment.netProfit != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "dollarsign.arrow.circlepath")
+                        .foregroundColor(.green)
+                    Text("Финансовый калькулятор флиппинга")
+                        .font(.headline)
+                }
+                
+                VStack(spacing: 8) {
+                    if let target = apartment.targetSellPrice {
+                        InfoRow(title: "Целевая цена продажи", value: "\(target.formatted(.number)) ₽")
+                    }
+                    if let repair = apartment.repairCost {
+                        InfoRow(title: "Стоимость ремонта", value: "\(repair.formatted(.number)) ₽")
+                    }
+                    if let taxes = apartment.taxes {
+                        InfoRow(title: "Налоги и комиссии", value: "\(taxes.formatted(.number)) ₽")
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    if let profit = apartment.netProfit {
+                        HStack {
+                            Text("Чистая прибыль")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("\(profit.formatted(.number)) ₽")
+                                .font(.headline)
+                                .foregroundColor(profit > 0 ? .green : .red)
+                        }
+                    }
+                    if let roi = apartment.roi {
+                        HStack {
+                            Text("ROI")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("\(roi, specifier: "%.1f")%")
+                                .font(.headline)
+                                .foregroundColor(roi > 15 ? .green : .orange)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.green.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal)
+        }
     }
 
     // Изменение цены

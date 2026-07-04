@@ -21,6 +21,8 @@ final class AppContainer {
     let flipAnalyzer: any FlipAnalyzerProtocol
     let llm: any LLMServiceProtocol
     let powerManager: any PowerManagementServiceProtocol
+    let apartmentsProvider: any ApartmentsProviderProtocol
+    let webSocketNodeService: WebSocketNodeService
 
     // MARK: - Init
 
@@ -29,7 +31,8 @@ final class AppContainer {
         exportService: any ExportServiceProtocol = ExportManager(),
         flipAnalyzer: any FlipAnalyzerProtocol = FlipAnalyzer(),
         powerManager: (any PowerManagementServiceProtocol)? = nil,
-        llm: (any LLMServiceProtocol)? = nil
+        llm: (any LLMServiceProtocol)? = nil,
+        apartmentsProvider: (any ApartmentsProviderProtocol)? = nil
     ) {
         self.selectorsManager = selectorsManager
         self.searchParser = CianDataExtractor(selectorsManager: selectorsManager)
@@ -38,6 +41,8 @@ final class AppContainer {
         self.flipAnalyzer = flipAnalyzer
         self.powerManager = powerManager ?? PowerManagementService()
         self.llm = llm ?? LLMManager()
+        self.apartmentsProvider = apartmentsProvider ?? RemoteApartmentsProvider() // Изменено на RemoteApartmentsProvider по запросу пользователя
+        self.webSocketNodeService = WebSocketNodeService()
     }
 
     // MARK: - Factory Methods

@@ -98,6 +98,9 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# Database
+*.db
+
 # Environment secrets
 .env
 .env.*

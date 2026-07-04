@@ -564,6 +564,7 @@ private struct ParserSettingsTab: View {
     @AppStorage("parserAutoCheck")        private var autoCheck: Bool = true
     @AppStorage("parserStaleDays")        private var staleDays: Int = 3
     @AppStorage("moderateReparseHours")   private var moderateReparseHours: Int = 12
+    @AppStorage("parserEnableDistributedNetwork") private var enableDistributedNetwork: Bool = false
     @AppStorage("parserEnablePagination") private var enablePagination: Bool = true
     @AppStorage("parserMaxPages")         private var maxPages: Int = 1
     @AppStorage("parserMode")             private var parserMode: ParsingMode = .parallel
@@ -572,6 +573,7 @@ private struct ParserSettingsTab: View {
     @AppStorage("hideApartments")         private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")     private var penalizePromotions: Bool = true
     @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
+    @AppStorage("isWebSocketNodeEnabled") private var isWebSocketNodeEnabled: Bool = false
 
     @Environment(AppContainer.self) private var container
     @Environment(\.modelContext) private var modelContext
@@ -647,6 +649,17 @@ private struct ParserSettingsTab: View {
             }
 
             Section {
+                Toggle("Участвовать в распределенной сети поиска", isOn: $enableDistributedNetwork)
+                    .help("Позволяет получать квартиры не только из локального поиска, но и от других участников сети.")
+                Toggle("Подключить WebSocket-ноду", isOn: $isWebSocketNodeEnabled)
+                    .help("Подключается к ws://localhost:8000/ws/parsing-nodes и получает распределенные задачи.")
+            } header: {
+                Text("Сеть")
+            } footer: {
+                Text("Обмен результатами парсинга для ускорения обновления базы.")
+            }
+
+            Section {
                 HStack {
                     Button("Пересчитать округа") {
                         backfillOkrugs()
@@ -675,6 +688,7 @@ private struct ParserSettingsTab: View {
                     autoCheck = true
                     staleDays = 3
                     enablePagination = true
+                    enableDistributedNetwork = false
                     maxPages = 1
                     parserMode = .parallel
                     requireDetailParsed = true

@@ -362,20 +362,20 @@ struct CianResponseHTMLParserTests {
 @MainActor
 struct CianDetailParserViewsTests {
 
-    // Access the internal parsing via public API:
-    // Create an apartment, build wrapped HTML, call parseDetailJSON.
+    // Доступ к внутреннему парсингу через публичный API:
+    // Создаем объект квартиры, конструируем обертку JSON и вызываем parseDetailJSON.
     private func makeApartment() -> Apartment {
         Apartment(id: "test", title: "Тест", price: 5_000_000, url: "", address: "Москва")
     }
 
-    /// Builds a minimal __NEXT_DATA__ JSON that includes a views-formatted string.
+    /// Строит минимальный JSON __NEXT_DATA__, содержащий строку с форматированными просмотрами.
     private func makeJSON(viewsString: String) -> String {
         """
         {"props":{"pageProps":{"initialState":{"offerData":{"offer":{"stats":{"totalViewsFormattedString":"\(viewsString)"}}}}}}}
         """
     }
 
-    @Test("Parses views with comma separator")
+    @Test("Парсит просмотры с разделителем-запятой")
     func views_commaSeparator() throws {
         let apt = makeApartment()
         let parser = CianDetailParser(selectorsManager: SelectorsManager())
@@ -384,7 +384,7 @@ struct CianDetailParserViewsTests {
         #expect(apt.viewsToday == 44)
     }
 
-    @Test("Parses views with middle-dot separator")
+    @Test("Парсит просмотры с разделителем-точкой")
     func views_dotSeparator() throws {
         let apt = makeApartment()
         let parser = CianDetailParser(selectorsManager: SelectorsManager())
@@ -393,7 +393,7 @@ struct CianDetailParserViewsTests {
         #expect(apt.viewsToday == 513)
     }
 
-    @Test("Returns nil viewsToday when string absent")
+    @Test("Возвращает nil для viewsToday, если строка отсутствует")
     func views_absent() {
         let apt = makeApartment()
         let json = """
@@ -402,6 +402,67 @@ struct CianDetailParserViewsTests {
         let parser = CianDetailParser(selectorsManager: SelectorsManager())
         parser.parseDetailJSON(jsonString: json, apartment: apt)
         #expect(apt.viewsToday == nil)
+    }
+
+    @Test("Парсит просмотры с фразой 'нет за сегодня'")
+    func views_noViewsToday() throws {
+        let apt = makeApartment()
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        parser.parseDetailJSON(jsonString: makeJSON(viewsString: "1 254 просмотра, нет за сегодня"), apartment: apt)
+        #expect(apt.viewsTotal == 1254)
+        #expect(apt.viewsToday == 0)
+    }
+
+    @Test("Парсит общее количество просмотров при отсутствии просмотров за сегодня")
+    func views_onlyTotalViews() throws {
+        let apt = makeApartment()
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        parser.parseDetailJSON(jsonString: makeJSON(viewsString: "847 просмотров"), apartment: apt)
+        #expect(apt.viewsTotal == 847)
+        #expect(apt.viewsToday == nil)
+    }
+
+    @Test("Извлекает __viewsHistory и сохраняет в viewsHistoryJSON")
+    func views_viewsHistoryExtraction() throws {
+        let apt = makeApartment()
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        let json = """
+        {"__viewsHistory":"{\\"days\\":[{\\"date\\":\\"2026-07-01\\",\\"views\\":10}]}"}
+        """
+        parser.parseDetailJSON(jsonString: json, apartment: apt)
+        #expect(apt.viewsHistoryJSON == "{\"days\":[{\"date\":\"2026-07-01\",\"views\":10}]}")
+    }
+
+    @Test("Парсит просмотры из DOM Fallback с использованием селектора data-name")
+    func views_domFallbackDataName() throws {
+        let apt = makeApartment()
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        let html = """
+        <html>
+        <body>
+          <div data-name="OfferStats">1 890 просмотров · 12 за сегодня</div>
+        </body>
+        </html>
+        """
+        parser.parseDetailPage(html: html, apartment: apt)
+        #expect(apt.viewsTotal == 1890)
+        #expect(apt.viewsToday == 12)
+    }
+
+    @Test("Парсит просмотры из DOM Fallback с использованием сырого текста страницы")
+    func views_domFallbackRawText() throws {
+        let apt = makeApartment()
+        let parser = CianDetailParser(selectorsManager: SelectorsManager())
+        let html = """
+        <html>
+        <body>
+          <p>Некий текст на странице. Всего 789 просмотров, нет за сегодня.</p>
+        </body>
+        </html>
+        """
+        parser.parseDetailPage(html: html, apartment: apt)
+        #expect(apt.viewsTotal == 789)
+        #expect(apt.viewsToday == 0)
     }
 }
 
@@ -450,6 +511,46 @@ struct FlipAnalyzerDemandTests {
         let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
         let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
         #expect(result.demandLevel == .hot)
+    }
+
+    @Test("Использует точные просмотры за вчера из истории")
+    func demand_yesterdayViewsFromHistory() {
+        let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let yesterdayStr = formatter.string(from: yesterday)
+        
+        apt.viewsHistoryJSON = """
+        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":150}]}}
+        """
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.demandLevel == .market)
+        #expect(result.viewsPerDay == 150.0)
+    }
+
+    @Test("Использует скользящее среднее за последние 3 завершенных дня, если вчерашний день отсутствует")
+    func demand_averageLast3CompletedDays() {
+        let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = formatter.string(from: Date())
+        
+        // Вчерашнего дня нет, но есть позавчерашние 3 дня: 80, 100, 120 (среднее = 100)
+        apt.viewsHistoryJSON = """
+        {"daily":{"dailyViews":[
+            {"date":"2026-06-28","views":80},
+            {"date":"2026-06-29","views":100},
+            {"date":"2026-06-30","views":120},
+            {"date":"\(todayStr)","views":300}
+        ]}}
+        """
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false)
+        // Задаем referenceDate в будущем, чтобы сегодняшнее число из JSON соответствовало сегодняшнему дню
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.demandLevel == .market)
+        #expect(result.viewsPerDay == 100.0)
     }
 }
 
