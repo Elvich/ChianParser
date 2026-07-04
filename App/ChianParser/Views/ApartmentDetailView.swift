@@ -42,6 +42,7 @@ struct ApartmentDetailView: View {
                         openLinkButton
                     }
                     metroView
+                    statsHighlightView
                     waitingConditionView
                     flipScoreView
                     currentPriceView
@@ -392,8 +393,18 @@ struct ApartmentDetailView: View {
 
     @ViewBuilder
     private var statsHighlightView: some View {
-        if apartment.viewsTotal != nil || apartment.viewsToday != nil {
-            HStack(spacing: 20) {
+        if apartment.viewsTotal != nil || apartment.viewsToday != nil || apartment.yesterdayViews != nil {
+            HStack(spacing: 12) {
+                if let yesterday = apartment.yesterdayViews {
+                    Label("\(yesterday) вчера", systemImage: "arrow.uturn.backward.circle.fill")
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(20)
+                }
+
                 if let today = apartment.viewsToday {
                     Label("\(today) сегодня", systemImage: "eye.fill")
                         .font(.caption)

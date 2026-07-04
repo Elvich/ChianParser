@@ -655,7 +655,26 @@ private struct ApartmentRow: View {
                     }
 
                     Spacer()
-                    DemandBadge(level: flipScore.demandLevel)
+                    HStack(spacing: 4) {
+                        if let yesterday = apartment.yesterdayViews {
+                            Text("\(yesterday) вч")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.15))
+                                .foregroundColor(.green)
+                                .cornerRadius(4)
+                        } else if let today = apartment.viewsToday {
+                            Text("\(today) сег")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.15))
+                                .foregroundColor(.blue)
+                                .cornerRadius(4)
+                        }
+                        DemandBadge(level: flipScore.demandLevel)
+                    }
                 }
 
                 Text(apartment.address)

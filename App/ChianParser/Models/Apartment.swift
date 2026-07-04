@@ -57,6 +57,31 @@ final class Apartment {
     var publishedDate: Date?    // Дата публикации объявления
     var viewsHistoryJSON: String? // Детальная статистика просмотров (JSON)
     
+    // Вчерашние просмотры из детальной истории
+    var yesterdayViews: Int? {
+        guard let historyJSON = viewsHistoryJSON, !historyJSON.isEmpty,
+              let data = historyJSON.data(using: .utf8) else { return nil }
+        
+        struct CianViewsHistoryDTO: Codable {
+            struct Daily: Codable {
+                struct DayViews: Codable {
+                    let date: String
+                    let views: Int
+                }
+                let dailyViews: [DayViews]
+            }
+            let daily: Daily
+        }
+        
+        guard let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date().addingTimeInterval(-86400)
+        let yesterdayStr = formatter.string(from: yesterdayDate)
+        
+        return history.daily.dailyViews.first(where: { $0.date == yesterdayStr })?.views
+    }
+    
     // Снэпшот для вычисления честного спроса за день (Дельта)
     var previousViewsTotal: Int?
     var previousViewsDate: Date?

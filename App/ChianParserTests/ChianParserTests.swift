@@ -433,6 +433,20 @@ struct CianDetailParserViewsTests {
         #expect(apt.viewsHistoryJSON == "{\"days\":[{\"date\":\"2026-07-01\",\"views\":10}]}")
     }
 
+    @Test("Вычисляемое свойство yesterdayViews извлекает вчерашние просмотры")
+    func views_yesterdayViewsComputedProperty() throws {
+        let apt = makeApartment()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let yesterdayStr = formatter.string(from: yesterday)
+        
+        apt.viewsHistoryJSON = """
+        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":78}]}}
+        """
+        #expect(apt.yesterdayViews == 78)
+    }
+
     @Test("Парсит просмотры из DOM Fallback с использованием селектора data-name")
     func views_domFallbackDataName() throws {
         let apt = makeApartment()

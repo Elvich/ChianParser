@@ -300,18 +300,8 @@ private extension FlipAnalyzer {
         }
         
         // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории
-        if let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
-           let data = historyJSON.data(using: .utf8),
-           let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
-            let dailyViews = history.daily.dailyViews
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: referenceDate) ?? referenceDate.addingTimeInterval(-86400)
-            let yesterdayStr = formatter.string(from: yesterdayDate)
-            
-            if let yesterdayViews = dailyViews.first(where: { $0.date == yesterdayStr }) {
-                rawPerDay = Double(yesterdayViews.views)
-            }
+        if let yesterday = apartment.yesterdayViews {
+            rawPerDay = Double(yesterday)
         }
         
         // 2. Приоритет 2: Честная дельта общего счетчика за последние N часов (скользящее окно)
