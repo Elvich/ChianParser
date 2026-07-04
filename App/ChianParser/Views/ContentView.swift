@@ -75,6 +75,7 @@ struct ContentBody: View {
     @AppStorage("hideApartments")          private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")      private var penalizePromotions: Bool = true
     @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
+    @AppStorage("useYesterdayViews")       private var useYesterdayViews: Bool = true
     @AppStorage("useViewsScoreInsteadOfMetro") private var useViewsScoreInsteadOfMetro: Bool = false
     @AppStorage("metroMaxDistance")        private var maxMetroDistance: Int = 0
     @AppStorage("metroWalkOnly")           private var metroWalkOnly: Bool = false
@@ -129,6 +130,10 @@ struct ContentBody: View {
             }
             .onChange(of: extrapolateMorningViews) { _, v in
                 viewModel.extrapolateMorningViews = v
+                viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
+            }
+            .onChange(of: useYesterdayViews) { _, v in
+                viewModel.useYesterdayViews = v
                 viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist)
             }
             .onChange(of: useViewsScoreInsteadOfMetro) { _, v in
@@ -278,6 +283,7 @@ struct ContentBody: View {
         viewModel.filterCoordinator.hideApartments       = hideApartments
         viewModel.penalizePromotions   = penalizePromotions
         viewModel.extrapolateMorningViews = extrapolateMorningViews
+        viewModel.useYesterdayViews = useYesterdayViews
         viewModel.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
         viewModel.filterCoordinator.maxMetroDistance     = maxMetroDistance
         viewModel.filterCoordinator.metroWalkOnly        = metroWalkOnly
@@ -656,7 +662,7 @@ private struct ApartmentRow: View {
 
                     Spacer()
                     HStack(spacing: 4) {
-                        if let yesterday = apartment.yesterdayViews {
+                        if useYesterdayViews, let yesterday = apartment.yesterdayViews {
                             Text("\(yesterday) вч")
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 4)

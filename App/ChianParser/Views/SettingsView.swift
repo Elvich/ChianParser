@@ -573,6 +573,7 @@ private struct ParserSettingsTab: View {
     @AppStorage("hideApartments")         private var hideApartments: Bool = false
     @AppStorage("penalizePromotions")     private var penalizePromotions: Bool = true
     @AppStorage("extrapolateMorningViews") private var extrapolateMorningViews: Bool = true
+    @AppStorage("useYesterdayViews")       private var useYesterdayViews: Bool = true
     @AppStorage("isWebSocketNodeEnabled") private var isWebSocketNodeEnabled: Bool = false
 
     @Environment(AppContainer.self) private var container
@@ -606,6 +607,8 @@ private struct ParserSettingsTab: View {
                     .help("Делит просмотры на 1.5 для Стандарта и на 3.0 для ТОП-3 объявлений, чтобы нивелировать накрутку просмотров.")
                 Toggle("Экстраполяция утренних просмотров", isOn: $extrapolateMorningViews)
                     .help("Умный пересчёт просмотров 'за сегодня' в утренние часы с учетом суточной кривой активности пользователей.")
+                Toggle("Использовать просмотры за прошлые дни", isOn: $useYesterdayViews)
+                    .help("Использует точные просмотры за вчерашний день (или максимум за вчера/сегодня) для оценки спроса и расчета FlipScore.")
                 Stepper(value: $staleDays, in: 1...30) {
                     HStack {
                         Text("Порог устаревания")

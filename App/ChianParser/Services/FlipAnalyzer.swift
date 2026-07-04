@@ -122,7 +122,14 @@ extension FlipAnalyzer: FlipAnalyzerProtocol {
 
         let priceScore = computePriceScore(priceSqm: priceSqm, benchmarkSqm: benchmarkSqm, benchmark: benchmark)
         
-        let (demandLevel, viewsPerDay) = computeDemand(apartment: apartment, thresholds: thresholds, penalizePromotions: benchmark.penalizePromotions, extrapolateMorningViews: benchmark.extrapolateMorningViews, referenceDate: referenceDate)
+        let (demandLevel, viewsPerDay) = computeDemand(
+            apartment: apartment,
+            thresholds: thresholds,
+            penalizePromotions: benchmark.penalizePromotions,
+            extrapolateMorningViews: benchmark.extrapolateMorningViews,
+            useYesterdayViews: benchmark.useYesterdayViews,
+            referenceDate: referenceDate
+        )
         
         let metroScore: Int
         if benchmark.useViewsScoreInsteadOfMetro {
@@ -284,7 +291,7 @@ private extension FlipAnalyzer {
     }
 
     /// Вычисление спроса на основе просмотров в день.
-    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true, referenceDate: Date = Date()) -> (DemandLevel, Double?) {
+    nonisolated func computeDemand(apartment: Apartment, thresholds: DemandThresholds, penalizePromotions: Bool, extrapolateMorningViews: Bool = true, useYesterdayViews: Bool = true, referenceDate: Date = Date()) -> (DemandLevel, Double?) {
         var rawPerDay: Double? = nil
         
         // Вспомогательные DTO для парсинга истории просмотров
@@ -299,9 +306,30 @@ private extension FlipAnalyzer {
             let daily: Daily
         }
         
-        // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории
-        if let yesterday = apartment.yesterdayViews {
-            rawPerDay = Double(yesterday)
+        // 1. Приоритет 1: Точное количество просмотров за вчера из детальной истории (или макс вчера/сегодня)
+        if useYesterdayViews, let yesterday = apartment.yesterdayViews {
+            // Вычисляем также сегодняшние просмотры с экстраполяцией для сравнения (берем максимум, чтобы не занижать спрос при росте)
+            var todayExtrapolated: Double = 0.0
+            if let viewsToday = apartment.viewsToday, viewsToday > 0 {
+                let hour = Calendar.current.component(.hour, from: referenceDate)
+                let isEarlyMorning = (0..<8).contains(hour)
+                if isEarlyMorning {
+                    todayExtrapolated = Double(viewsToday)
+                } else {
+                    let distribution: [Double] = [
+                        0.0, 0.01, 0.02, 0.02, 0.03, 0.03, 0.04, 0.06, 0.10, 0.15, 0.22, 0.30, 0.38,
+                        0.45, 0.52, 0.59, 0.66, 0.73, 0.79, 0.85, 0.90, 0.94, 0.97, 0.99, 1.0
+                    ]
+                    let h = max(0, min(24, hour))
+                    let percentage = distribution[h]
+                    if percentage >= 0.10 {
+                        todayExtrapolated = Double(viewsToday) / percentage
+                    } else {
+                        todayExtrapolated = Double(viewsToday)
+                    }
+                }
+            }
+            rawPerDay = max(Double(yesterday), todayExtrapolated)
         }
         
         // 2. Приоритет 2: Честная дельта общего счетчика за последние N часов (скользящее окно)
@@ -349,7 +377,7 @@ private extension FlipAnalyzer {
         }
         
         // 4. Приоритет 4: Среднее арифметическое просмотров за последние 3 завершенных дня из истории
-        if rawPerDay == nil, let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
+        if useYesterdayViews, rawPerDay == nil, let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
            let data = historyJSON.data(using: .utf8),
            let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
             let dailyViews = history.daily.dailyViews

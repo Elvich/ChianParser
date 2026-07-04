@@ -544,6 +544,23 @@ struct FlipAnalyzerDemandTests {
         #expect(result.viewsPerDay == 150.0)
     }
 
+    @Test("Игнорирует историю вчерашних просмотров, если отключена настройка useYesterdayViews")
+    func demand_ignoresYesterdayViewsWhenDisabled() {
+        let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let yesterdayStr = formatter.string(from: yesterday)
+        
+        apt.viewsHistoryJSON = """
+        {"daily":{"dailyViews":[{"date":"\(yesterdayStr)","views":150}]}}
+        """
+        apt.viewsToday = 10
+        let benchmark = BenchmarkContext(byOkrug: [:], globalMedian: nil, globalSampleSize: 0, extrapolateMorningViews: false, useYesterdayViews: false)
+        let result = analyzer.analyze(apartment: apt, benchmark: benchmark, thresholds: thresholds)
+        #expect(result.viewsPerDay == 10.0)
+    }
+
     @Test("Использует скользящее среднее за последние 3 завершенных дня, если вчерашний день отсутствует")
     func demand_averageLast3CompletedDays() {
         let apt = Apartment(id: UUID().uuidString, title: "T", price: 5_000_000, url: "", address: "Москва")

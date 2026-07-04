@@ -105,6 +105,9 @@ final class ContentViewModel {
     /// When enabled, normalizes views for morning parsing according to a non-linear distribution curve.
     var extrapolateMorningViews: Bool = true
 
+    /// When true, includes yesterday's views (or max yesterday/today) for demand calculation.
+    var useYesterdayViews: Bool = true
+
     /// When true, Metro score (0-25) is replaced with a Views score based on demand level.
     var useViewsScoreInsteadOfMetro: Bool = false
 
@@ -204,6 +207,7 @@ final class ContentViewModel {
             benchmarkMode: benchmarkMode,
             penalizePromotions: penalizePromotions,
             extrapolateMorningViews: extrapolateMorningViews,
+            useYesterdayViews: useYesterdayViews,
             useLiquidityAreaScore: config.isCustomAreaScoreEnabled,
             useViewsScoreInsteadOfMetro: useViewsScoreInsteadOfMetro,
             targetPercentile: targetPercentileToUse,

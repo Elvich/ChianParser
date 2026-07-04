@@ -56,6 +56,9 @@ struct BenchmarkContext {
     /// When true, normalizes views for morning parsing according to a non-linear distribution curve.
     let extrapolateMorningViews: Bool
 
+    /// When true, includes yesterday's views (or max yesterday/today) for demand calculation.
+    let useYesterdayViews: Bool
+
     /// When enabled, uses the liquidity-optimized bell curve for Area scoring.
     let useLiquidityAreaScore: Bool
 
@@ -82,6 +85,7 @@ struct BenchmarkContext {
         benchmarkMode: BenchmarkMode = .okrug,
         penalizePromotions: Bool = true,
         extrapolateMorningViews: Bool = true,
+        useYesterdayViews: Bool = true,
         useLiquidityAreaScore: Bool = false,
         useViewsScoreInsteadOfMetro: Bool = false,
         targetPercentile: Double = 0.5,
@@ -100,6 +104,7 @@ struct BenchmarkContext {
         self.benchmarkMode = benchmarkMode
         self.penalizePromotions = penalizePromotions
         self.extrapolateMorningViews = extrapolateMorningViews
+        self.useYesterdayViews = useYesterdayViews
         self.useLiquidityAreaScore = useLiquidityAreaScore
         self.useViewsScoreInsteadOfMetro = useViewsScoreInsteadOfMetro
         self.targetPercentile = targetPercentile
@@ -113,6 +118,7 @@ struct BenchmarkContext {
         byOkrug: [:],
         globalMedian: nil,
         globalSampleSize: 0,
+        useYesterdayViews: true,
         priceScoreWeight: 40,
         metroProximityWeight: 25,
         locationFloorWeight: 20,
