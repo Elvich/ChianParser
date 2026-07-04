@@ -268,20 +268,63 @@ extension DetailPageLoader: WKNavigationDelegate {
                     offerId = urlMatch[1];
                 }
 
+                // Helper to find a key recursively in an object
+                function findVal(obj, key) {
+                    if (!obj || typeof obj !== 'object') return null;
+                    if (obj[key] !== undefined) return obj[key];
+                    for (var k in obj) {
+                        if (obj.hasOwnProperty(k)) {
+                            var res = findVal(obj[k], key);
+                            if (res !== null) return res;
+                        }
+                    }
+                    return null;
+                }
+
                 // 2. Извлекаем publishedDate
                 var publishedDate = "";
+                
                 var timeElem = document.querySelector('time[datetime]');
                 if (timeElem) {
-                    publishedDate = timeElem.getAttribute('datetime') || "";
+                    var dt = timeElem.getAttribute('datetime') || "";
+                    if (dt) publishedDate = dt.slice(0, 10);
                 }
+                
                 if (!publishedDate) {
                     try {
-                        var nextData = window.__NEXT_DATA__;
-                        var ps = nextData && nextData.props && nextData.props.pageProps && nextData.props.pageProps.initialState;
-                        var offerData = ps && (ps.offerCard && ps.offerCard.offerData || ps.offer && ps.offer.offerData);
-                        var offer = offerData && (offerData.offer || offerData);
-                        if (offer && offer.publishedDate) {
-                            publishedDate = offer.publishedDate;
+                        var rawDate = findVal(window.__NEXT_DATA__, 'publishedDate');
+                        if (rawDate && typeof rawDate === 'string') {
+                            publishedDate = rawDate.slice(0, 10);
+                        } else {
+                            var ts = findVal(window.__NEXT_DATA__, 'addedTimestamp');
+                            if (ts) {
+                                var dateObj = new Date(ts * 1000);
+                                var y = dateObj.getFullYear();
+                                var m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                                var d = String(dateObj.getDate()).padStart(2, '0');
+                                publishedDate = y + '-' + m + '-' + d;
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                if (!publishedDate) {
+                    try {
+                        var offerAddedElem = document.querySelector('[data-name="OfferAdded"]') || document.querySelector('[class*="added"]');
+                        if (offerAddedElem) {
+                            var text = offerAddedElem.textContent || "";
+                            var match = text.match(/(\\d{2})\\.(\\d{2})\\.(\\d{4})/);
+                            if (match) {
+                                publishedDate = match[3] + '-' + match[2] + '-' + match[1];
+                            } else {
+                                var today = new Date();
+                                if (text.indexOf('сегодня') !== -1) {
+                                    publishedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+                                } else if (text.indexOf('вчера') !== -1) {
+                                    var yesterday = new Date(today.getTime() - 86400000);
+                                    publishedDate = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+                                }
+                            }
                         }
                     } catch(e) {}
                 }
