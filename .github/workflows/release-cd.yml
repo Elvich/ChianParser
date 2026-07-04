@@ -91,3 +91,17 @@ jobs:
           scp -i ssh_key -P ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no "$DMG_FILE" "$LATEST_JSON" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_TARGET_DIR }}/"
           
           rm -f ssh_key
+
+      # 7. Создание релиза в GitHub и загрузка DMG-пакета в Release Assets
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            App/*.dmg
+            App/latest.json
+          tag_name: latest
+          name: Latest Release Build
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

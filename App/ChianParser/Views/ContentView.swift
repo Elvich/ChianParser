@@ -37,6 +37,7 @@ struct ContentView: View {
 // MARK: - Main UI Body
 
 struct ContentBody: View {
+    @Environment(AppContainer.self) private var container
     @Bindable var viewModel: ContentViewModel
     let apartments: [Apartment]
     @Query private var configs: [ScoringConfiguration]

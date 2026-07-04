@@ -22,9 +22,7 @@ async def update_scoring_config(
     Обновляет текущую (или создает по умолчанию) конфигурацию скоринга.
     При обновлении автоматически запускает перерасчет баллов для всех квартир в базе данных.
     """
-    statement = select(ScoringConfiguration).where(
-        ScoringConfiguration.is_active
-    )
+    statement = select(ScoringConfiguration).where(ScoringConfiguration.is_active)
     result = await session.exec(statement)
     config = result.first()
 
