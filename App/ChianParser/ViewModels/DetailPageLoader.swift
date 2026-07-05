@@ -287,15 +287,18 @@ extension DetailPageLoader: WKNavigationDelegate {
                 }
 
                 // Helper to find a key recursively in an object
-                function findVal(obj, key) {
+                function findVal(obj, key, depth = 0) {
+                    if (depth > 20) return null;
                     if (!obj || typeof obj !== 'object') return null;
                     if (obj[key] !== undefined) return obj[key];
-                    for (var k in obj) {
-                        if (obj.hasOwnProperty(k)) {
-                            var res = findVal(obj[k], key);
-                            if (res !== null) return res;
+                    try {
+                        for (var k in obj) {
+                            if (Object.prototype.hasOwnProperty.call(obj, k)) {
+                                var res = findVal(obj[k], key, depth + 1);
+                                if (res !== null) return res;
+                            }
                         }
-                    }
+                    } catch (e) {}
                     return null;
                 }
 
@@ -442,7 +445,14 @@ extension DetailPageLoader: WKNavigationDelegate {
                 } catch(e) {}
                 if (!rawResult) {
                     try {
-                        if (window._cianConfig) rawResult = JSON.stringify(window._cianConfig);
+                        if (window._cianConfig) {
+                            var offerDataObj = findVal(window._cianConfig, 'offerData');
+                            if (offerDataObj) {
+                                rawResult = JSON.stringify({ offerData: offerDataObj });
+                            } else {
+                                rawResult = JSON.stringify(window._cianConfig);
+                            }
+                        }
                     } catch(e) {}
                 }
                 if (!rawResult) {
