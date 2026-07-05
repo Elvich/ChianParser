@@ -300,7 +300,10 @@ private extension FlipAnalyzer {
                 let date: String
                 let views: Int
             }
-            let days: [DayViews]
+            struct Daily: Codable {
+                let dailyViews: [DayViews]?
+            }
+            let daily: Daily?
         }
         
         // Настройка календаря и временной зоны Europe/Moscow для корректной работы с серверами Циан
@@ -383,8 +386,8 @@ private extension FlipAnalyzer {
         // 4. Приоритет 4: Среднее арифметическое просмотров за последние 3 завершенных дня из истории
         if useYesterdayViews, rawPerDay == nil, let historyJSON = apartment.viewsHistoryJSON, !historyJSON.isEmpty,
            let data = historyJSON.data(using: .utf8),
-           let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) {
-            let dailyViews = history.days
+           let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data),
+           let dailyViews = history.daily?.dailyViews {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             if let moscowTimeZone = moscowTimeZone {

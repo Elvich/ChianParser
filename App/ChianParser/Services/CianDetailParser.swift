@@ -28,9 +28,22 @@ final class CianDetailParser: @unchecked Sendable {
         let oldLastUpdate = apartment.lastUpdate
         
         if let jsonData = jsonString.data(using: .utf8),
-           let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-           let viewsHistory = jsonObject["__viewsHistory"] as? String {
-            apartment.viewsHistoryJSON = viewsHistory
+           let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+           
+            if let viewsHistory = jsonObject["__viewsHistory"] as? String {
+                apartment.viewsHistoryJSON = viewsHistory
+            }
+            
+            if let domViewsStr = jsonObject["__domViewsString"] as? String {
+                parseViewsFormattedString(domViewsStr, apartment: apartment)
+            } else if let domViewsObj = jsonObject["__domViewsString"] as? [String: Any] {
+                if let totalStr = domViewsObj["totalViews"] as? String, let total = Int(totalStr) {
+                    apartment.viewsTotal = total
+                }
+                if let todayStr = domViewsObj["todayViews"] as? String, let today = Int(todayStr) {
+                    apartment.viewsToday = today
+                }
+            }
         }
         
         let wrappedHTML = "<html><head><script id=\"__NEXT_DATA__\" type=\"application/json\">\(jsonString)</script></head><body></body></html>"

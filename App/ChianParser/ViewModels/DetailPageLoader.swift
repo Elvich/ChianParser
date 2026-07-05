@@ -258,13 +258,14 @@ extension DetailPageLoader: WKNavigationDelegate {
             let jsWaitForHydration = """
             (async function() {
                 return await new Promise((resolve) => {
-                    if (window.__NEXT_DATA__ || window._cianConfig) {
+                    const isReady = () => window.__NEXT_DATA__ || (window._cianConfig && window._cianConfig['frontend-offer-card']);
+                    if (isReady()) {
                         resolve(true);
                         return;
                     }
                     const startTime = Date.now();
                     const interval = setInterval(() => {
-                        if (window.__NEXT_DATA__ || window._cianConfig) {
+                        if (isReady()) {
                             clearInterval(interval);
                             resolve(true);
                         } else if (Date.now() - startTime > 5000) {
@@ -448,6 +449,10 @@ extension DetailPageLoader: WKNavigationDelegate {
                         if (window._cianConfig) {
                             var offerDataObj = findVal(window._cianConfig, 'offerData');
                             if (offerDataObj) {
+                                var statsObj = findVal(offerDataObj, 'stats');
+                                if (statsObj && statsObj.totalViewsFormattedString) {
+                                    offerDataObj.__domViewsString = statsObj.totalViewsFormattedString;
+                                }
                                 rawResult = JSON.stringify({ offerData: offerDataObj });
                             } else {
                                 rawResult = JSON.stringify(window._cianConfig);

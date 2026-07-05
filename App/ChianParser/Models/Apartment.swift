@@ -67,10 +67,14 @@ final class Apartment {
                 let date: String
                 let views: Int
             }
-            let days: [DayViews]
+            struct Daily: Codable {
+                let dailyViews: [DayViews]?
+            }
+            let daily: Daily?
         }
         
-        guard let history = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data) else { return nil }
+        guard let historyObj = try? JSONDecoder().decode(CianViewsHistoryDTO.self, from: data),
+              let days = historyObj.daily?.dailyViews else { return nil }
         
         // Используем московский часовой пояс, так как сервера Циан работают по Московскому времени
         guard let moscowTimeZone = TimeZone(identifier: "Europe/Moscow") else { return nil }
@@ -84,13 +88,13 @@ final class Apartment {
         formatter.timeZone = moscowTimeZone
         let yesterdayStr = formatter.string(from: yesterdayDate)
         
-        if let found = history.days.first(where: { $0.date == yesterdayStr }) {
+        if let found = days.first(where: { $0.date == yesterdayStr }) {
             return found.views
         }
         
         // Если дата вчерашнего дня отсутствует в истории, но находится в пределах диапазона
         // дат истории, значит вчера было 0 просмотров (а не nil, чтобы не откатываться на сегодня)
-        let sortedDates = history.days.map { $0.date }.sorted()
+        let sortedDates = days.map { $0.date }.sorted()
         if let firstDate = sortedDates.first, let lastDate = sortedDates.last,
            yesterdayStr >= firstDate, yesterdayStr <= lastDate {
             return 0
