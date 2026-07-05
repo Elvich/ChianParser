@@ -10,6 +10,8 @@ import AppKit
 
 struct ExportManager {
     
+    nonisolated init() {}
+
     // MARK: - Экспорт в CSV
     
     /// Экспортирует массив квартир в CSV файл

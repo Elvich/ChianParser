@@ -2,6 +2,7 @@ import Foundation
 
 // @unchecked Sendable: internal state is protected by NSLock.
 final class PowerManagementService: PowerManagementServiceProtocol, @unchecked Sendable {
+    nonisolated init() {}
 
     private var token: NSObjectProtocol?
     private let lock = NSLock()

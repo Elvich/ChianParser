@@ -11,6 +11,10 @@ public final class SelectorsManager: SelectorsManagerProtocol, @unchecked Sendab
     private let lock = NSLock()
     private var _config: SelectorsConfig
 
+    public nonisolated init() {
+        self._config = SelectorsManager.fallbackConfig
+    }
+
     public var config: SelectorsConfig {
         lock.lock()
         defer { lock.unlock() }

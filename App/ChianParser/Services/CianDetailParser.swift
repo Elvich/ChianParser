@@ -15,7 +15,7 @@ final class CianDetailParser: @unchecked Sendable {
     public let selectorsManager: any SelectorsManagerProtocol
 
     // MARK: - Init
-    public init(selectorsManager: any SelectorsManagerProtocol = SelectorsManager()) {
+    public nonisolated init(selectorsManager: any SelectorsManagerProtocol = SelectorsManager()) {
         self.selectorsManager = selectorsManager
     }
     

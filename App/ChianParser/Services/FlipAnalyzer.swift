@@ -13,7 +13,9 @@
 
 import Foundation
 
-final class FlipAnalyzer: @unchecked Sendable {}
+final class FlipAnalyzer: @unchecked Sendable {
+    nonisolated init() {}
+}
 
 // MARK: - FlipAnalyzerProtocol
 

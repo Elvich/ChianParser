@@ -140,7 +140,7 @@ struct FlipScoreResult {
         return (priceSqm - benchmarkSqm) / benchmarkSqm
     }
 
-    init(
+    nonisolated init(
         totalScore: Int,
         priceScore: Int,
         metroScore: Int,
