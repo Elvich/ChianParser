@@ -258,13 +258,13 @@ extension DetailPageLoader: WKNavigationDelegate {
             let jsWaitForHydration = """
             (async function() {
                 return await new Promise((resolve) => {
-                    if (window.__NEXT_DATA__) {
+                    if (window.__NEXT_DATA__ || window._cianConfig) {
                         resolve(true);
                         return;
                     }
                     const startTime = Date.now();
                     const interval = setInterval(() => {
-                        if (window.__NEXT_DATA__) {
+                        if (window.__NEXT_DATA__ || window._cianConfig) {
                             clearInterval(interval);
                             resolve(true);
                         } else if (Date.now() - startTime > 5000) {
@@ -310,11 +310,12 @@ extension DetailPageLoader: WKNavigationDelegate {
                 
                 if (!publishedDate) {
                     try {
-                        var rawDate = findVal(window.__NEXT_DATA__, 'publishedDate');
+                        var stateObj = window.__NEXT_DATA__ || window._cianConfig;
+                        var rawDate = findVal(stateObj, 'publishedDate') || findVal(stateObj, 'creationDate');
                         if (rawDate && typeof rawDate === 'string') {
                             publishedDate = rawDate.slice(0, 10);
                         } else {
-                            var ts = findVal(window.__NEXT_DATA__, 'addedTimestamp');
+                            var ts = findVal(stateObj, 'addedTimestamp');
                             if (ts) {
                                 var dateObj = new Date(ts * 1000);
                                 var y = dateObj.getFullYear();
