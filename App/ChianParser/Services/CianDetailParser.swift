@@ -36,11 +36,11 @@ final class CianDetailParser: @unchecked Sendable {
             
             if let domViewsStr = jsonObject["__domViewsString"] as? String {
                 parseViewsFormattedString(domViewsStr, apartment: apartment)
-            } else if let domViewsObj = jsonObject["__domViewsString"] as? [String: Any] {
-                if let totalStr = domViewsObj["totalViews"] as? String, let total = Int(totalStr) {
+            } else {
+                if let total = jsonObject["__domViewsTotal"] as? Int {
                     apartment.viewsTotal = total
                 }
-                if let todayStr = domViewsObj["todayViews"] as? String, let today = Int(todayStr) {
+                if let today = jsonObject["__domViewsToday"] as? Int {
                     apartment.viewsToday = today
                 }
             }

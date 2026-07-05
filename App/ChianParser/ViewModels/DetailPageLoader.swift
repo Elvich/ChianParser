@@ -255,44 +255,21 @@ extension DetailPageLoader: WKNavigationDelegate {
                 return
             }
 
-            let jsWaitForHydration = """
-            (async function() {
-                return await new Promise((resolve) => {
-                    const isReady = () => window.__NEXT_DATA__ || (window._cianConfig && window._cianConfig['frontend-offer-card']);
-                    if (isReady()) {
-                        resolve(true);
-                        return;
-                    }
-                    const startTime = Date.now();
-                    const interval = setInterval(() => {
-                        if (isReady()) {
-                            clearInterval(interval);
-                            resolve(true);
-                        } else if (Date.now() - startTime > 5000) {
-                            clearInterval(interval);
-                            resolve(false);
-                        }
-                    }, 200);
-                });
-            })();
-            """
-            _ = try? await webView.evaluateJavaScript(jsWaitForHydration)
-
+            // Ожидаем гидратации данных (появление __NEXT_DATA__ или _cianConfig)
             let jsExtractJSON = """
+            window.__extractedResult = null;
             (async function() {
-                // 1. Извлекаем offerId из URL
                 var offerId = "";
                 var urlMatch = window.location.href.match(/\\/(\\d+)\\/?/);
                 if (urlMatch && urlMatch[1]) {
                     offerId = urlMatch[1];
                 }
 
-                // Helper to find a key recursively in an object
                 function findVal(obj, key, depth = 0) {
                     if (depth > 20) return null;
-                    if (!obj || typeof obj !== 'object') return null;
-                    if (obj[key] !== undefined) return obj[key];
                     try {
+                        if (!obj || typeof obj !== 'object') return null;
+                        if (obj[key] !== undefined) return obj[key];
                         for (var k in obj) {
                             if (Object.prototype.hasOwnProperty.call(obj, k)) {
                                 var res = findVal(obj[k], key, depth + 1);
@@ -303,9 +280,7 @@ extension DetailPageLoader: WKNavigationDelegate {
                     return null;
                 }
 
-                // 2. Извлекаем publishedDate
                 var publishedDate = "";
-                
                 var timeElem = document.querySelector('time[datetime]');
                 if (timeElem) {
                     var dt = timeElem.getAttribute('datetime') || "";
@@ -331,175 +306,80 @@ extension DetailPageLoader: WKNavigationDelegate {
                     } catch(e) {}
                 }
                 
-                if (!publishedDate) {
+                var viewsHistory = null;
+                if (offerId && publishedDate) {
                     try {
-                        var offerAddedElem = document.querySelector('[data-name="OfferAdded"]') || document.querySelector('[class*="added"]');
-                        if (offerAddedElem) {
-                            var text = offerAddedElem.textContent || "";
-                            var match = text.match(/(\\d{2})\\.(\\d{2})\\.(\\d{4})/);
-                            if (match) {
-                                publishedDate = match[3] + '-' + match[2] + '-' + match[1];
-                            } else {
-                                var today = new Date();
-                                if (text.indexOf('сегодня') !== -1) {
-                                    publishedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-                                } else if (text.indexOf('вчера') !== -1) {
-                                    var yesterday = new Date(today.getTime() - 86400000);
-                                    publishedDate = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
-                                }
-                            }
+                        var statsUrl = 'https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate=' + encodeURIComponent(publishedDate) + '&offerId=' + offerId;
+                        var response = await fetch(statsUrl, { credentials: 'include' });
+                        if (response.ok) {
+                            viewsHistory = await response.text();
                         }
                     } catch(e) {}
                 }
 
-                 // 3. Выполняем fetch детальной статистики
-                 var viewsHistory = null;
-                 if (offerId && publishedDate) {
-                     try {
-                         var statsUrl = 'https://api.cian.ru/offer-card/v1/get-offer-card-statistic/?offerCreationDate=' + encodeURIComponent(publishedDate) + '&offerId=' + offerId;
-                         var response = await fetch(statsUrl, { credentials: 'include' });
-                         if (response.ok) {
-                             viewsHistory = await response.text();
-                         } else {
-                             viewsHistory = JSON.stringify({ error: "HTTP " + response.status });
-                         }
-                     } catch(e) {
-                         viewsHistory = JSON.stringify({ error: e.message || String(e) });
-                     }
-                 }
-
-                // Helper: extract views string from DOM text (e.g. "1507 просмотров, 7 за сегодня")
                 function extractViewsFromDOM() {
                     try {
                         var allText = document.body ? document.body.innerText : '';
                         var totalMatch = allText.match(/(\\d[\\d\\s\\u00A0]*\\d|\\d)\\s*просмотр/i);
                         var todayMatch = allText.match(/(\\d+)\\s*за сегодня/i);
-                        var noTodayMatch = allText.match(/нет\\s*за сегодня/i);
-                        
                         var totalViews = totalMatch ? totalMatch[1].replace(/\\D/g,'') : null;
-                        var todayViews = null;
-                        if (todayMatch) {
-                            todayViews = todayMatch[1];
-                        } else if (noTodayMatch) {
-                            todayViews = "0";
-                        }
-                        
-                        if (totalViews !== null || todayViews !== null) {
-                            return { totalViews: totalViews, todayViews: todayViews };
-                        }
+                        var todayViews = todayMatch ? todayMatch[1] : null;
+                        return { totalViews: totalViews, todayViews: todayViews };
                     } catch(e) {}
                     return null;
                 }
 
-                // Helper: inject DOM views and viewsHistory into a parsed JSON object
                 function injectDOMViewsAndHistory(jsonObj) {
                     var domViews = extractViewsFromDOM();
                     try {
                         var obj = JSON.parse(jsonObj);
-                        
-                        // Внедряем viewsHistory
-                        if (viewsHistory !== null) {
-                            obj.__viewsHistory = viewsHistory;
-                        }
-                        
+                        if (viewsHistory !== null) obj.__viewsHistory = viewsHistory;
                         if (domViews) {
-                            var ps = obj && obj.props && obj.props.pageProps && obj.props.pageProps.initialState;
-                            var offerData = ps && (ps.offerCard && ps.offerCard.offerData || ps.offer && ps.offer.offerData);
-                            if (!offerData) {
-                                // Store DOM views in a top-level sentinel for the Swift parser
-                                if (domViews.totalViews !== null) obj.__domViewsTotal = parseInt(domViews.totalViews);
-                                if (domViews.todayViews !== null) obj.__domViewsToday = parseInt(domViews.todayViews);
-                            } else {
-                                var offer = offerData.offer || offerData;
-                                if (!offer.stats) offer.stats = {};
-                                if (domViews.totalViews !== null) offer.stats.total = parseInt(domViews.totalViews);
-                                if (domViews.todayViews !== null) offer.stats.daily = parseInt(domViews.todayViews);
-                                
-                                var totalStr = domViews.totalViews !== null ? domViews.totalViews + ' просмотров' : '';
-                                var todayStr = domViews.todayViews !== null ? (domViews.todayViews === '0' ? 'нет за сегодня' : domViews.todayViews + ' за сегодня') : '';
-                                if (totalStr && todayStr) {
-                                    offer.stats.totalViewsFormattedString = totalStr + ' · ' + todayStr;
-                                } else {
-                                    offer.stats.totalViewsFormattedString = totalStr || todayStr;
-                                }
-                            }
+                            if (domViews.totalViews !== null) obj.__domViewsTotal = parseInt(domViews.totalViews);
+                            if (domViews.todayViews !== null) obj.__domViewsToday = parseInt(domViews.todayViews);
                         }
                         return JSON.stringify(obj);
-                    } catch(e) { 
-                        try {
-                            var fallbackObj = { original: jsonObj };
-                            if (viewsHistory !== null) fallbackObj.__viewsHistory = viewsHistory;
-                            if (domViews) {
-                                if (domViews.totalViews !== null) fallbackObj.__domViewsTotal = parseInt(domViews.totalViews);
-                                if (domViews.todayViews !== null) fallbackObj.__domViewsToday = parseInt(domViews.todayViews);
-                            }
-                            return JSON.stringify(fallbackObj);
-                        } catch(e2) {
-                            return jsonObj;
-                        }
-                    }
+                    } catch(e) { return jsonObj; }
                 }
 
                 var rawResult = null;
                 try {
                     if (window.__NEXT_DATA__) rawResult = JSON.stringify(window.__NEXT_DATA__);
+                    else if (window._cianConfig) rawResult = JSON.stringify(window._cianConfig);
                 } catch(e) {}
-                if (!rawResult) {
-                    try {
-                        if (window._cianConfig) {
-                            var offerDataObj = findVal(window._cianConfig, 'offerData');
-                            if (offerDataObj) {
-                                var statsObj = findVal(offerDataObj, 'stats');
-                                if (statsObj && statsObj.totalViewsFormattedString) {
-                                    offerDataObj.__domViewsString = statsObj.totalViewsFormattedString;
-                                }
-                                rawResult = JSON.stringify({ offerData: offerDataObj });
-                            } else {
-                                rawResult = JSON.stringify(window._cianConfig);
-                            }
-                        }
-                    } catch(e) {}
-                }
-                if (!rawResult) {
-                    try {
-                        var scripts = Array.from(document.querySelectorAll('script'));
-                        for (var s of scripts) {
-                            var t = s.textContent || '';
-                            if (t.length > 500 && t.indexOf('"offerData"') >= 0) {
-                                var start = t.indexOf('{');
-                                if (start >= 0) {
-                                    rawResult = t.substring(start);
-                                    break;
-                                }
-                            }
-                        }
-                    } catch(e) {}
-                }
-
+                
                 if (rawResult) {
-                    return injectDOMViewsAndHistory(rawResult);
+                    window.__extractedResult = injectDOMViewsAndHistory(rawResult);
+                    return;
                 }
-
-                // Last resort: return only DOM views and history as minimal JSON
+                
                 var domViews = extractViewsFromDOM();
                 var minimalObj = {};
-                if (viewsHistory !== null) {
-                    minimalObj.__viewsHistory = viewsHistory;
-                }
+                if (viewsHistory !== null) minimalObj.__viewsHistory = viewsHistory;
                 if (domViews) {
                     if (domViews.totalViews !== null) minimalObj.__domViewsTotal = parseInt(domViews.totalViews);
                     if (domViews.todayViews !== null) minimalObj.__domViewsToday = parseInt(domViews.todayViews);
                 }
-                return JSON.stringify(minimalObj);
+                
+                window.__extractedResult = JSON.stringify(minimalObj);
             })();
             """
-
-            let jsonResult = try? await webView.evaluateJavaScript(jsExtractJSON)
-            if let jsonString = jsonResult as? String,
-               !jsonString.isEmpty,
+            
+            _ = try? await webView.evaluateJavaScript(jsExtractJSON)
+            
+            var jsonString: String? = nil
+            for _ in 0..<15 {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300 ms
+                if let res = try? await webView.evaluateJavaScript("window.__extractedResult") as? String, !res.isEmpty {
+                    jsonString = res
+                    break
+                }
+            }
+            
+            if let jsonString = jsonString,
                let apartment = currentApartment {
                 print("✅ JSON извлечён для: \(apartment.title)")
-                detailParser.parseJSON(jsonString: jsonString, apartment: apartment)
+                detailParser.parseDetailJSON(jsonString: jsonString, apartment: apartment)
                 await scheduleNextApartment()
             } else {
                 print("⚠️ JSON недоступен, извлекаю HTML fallback...")
