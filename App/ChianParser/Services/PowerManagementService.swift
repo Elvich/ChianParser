@@ -9,7 +9,7 @@ final class PowerManagementService: PowerManagementServiceProtocol, @unchecked S
 
     /// Begins a system activity that prevents App Nap and idle system sleep.
     /// Safe to call from any thread. No-ops if an activity is already running.
-    func startActivity(reason: String) {
+    nonisolated func startActivity(reason: String) {
         lock.lock()
         defer { lock.unlock() }
         guard token == nil else { return }
@@ -21,7 +21,7 @@ final class PowerManagementService: PowerManagementServiceProtocol, @unchecked S
 
     /// Ends the current activity and releases the token.
     /// Safe to call from any thread. No-ops if no activity is running.
-    func endActivity() {
+    nonisolated func endActivity() {
         lock.lock()
         defer { lock.unlock() }
         guard let t = token else { return }

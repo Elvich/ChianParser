@@ -1,6 +1,6 @@
 import Foundation
 
-protocol PowerManagementServiceProtocol: AnyObject {
-    func startActivity(reason: String)
-    func endActivity()
+protocol PowerManagementServiceProtocol: Sendable {
+    nonisolated func startActivity(reason: String)
+    nonisolated func endActivity()
 }

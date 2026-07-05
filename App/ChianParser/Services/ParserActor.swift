@@ -8,7 +8,7 @@
 //
 
 import Foundation
-import SwiftData
+@preconcurrency import SwiftData
 
 @ModelActor
 actor ParserActor {

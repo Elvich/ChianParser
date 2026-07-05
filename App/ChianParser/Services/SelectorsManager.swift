@@ -11,9 +11,7 @@ public final class SelectorsManager: SelectorsManagerProtocol, @unchecked Sendab
     private let lock = NSLock()
     private var _config: SelectorsConfig
 
-    public nonisolated init() {
-        self._config = SelectorsManager.fallbackConfig
-    }
+
 
     public var config: SelectorsConfig {
         lock.lock()
@@ -21,7 +19,7 @@ public final class SelectorsManager: SelectorsManagerProtocol, @unchecked Sendab
         return _config
     }
 
-    private static let fallbackConfig = SelectorsConfig(
+    public nonisolated static let fallbackConfig = SelectorsConfig(
         search: SearchSelectorsConfig(
             cardSelector: "article",
             linkSelector: "a[href]",
@@ -75,7 +73,7 @@ public final class SelectorsManager: SelectorsManagerProtocol, @unchecked Sendab
         )
     )
 
-    public init() {
+    public nonisolated init() {
         self._config = Self.fallbackConfig
         reloadConfig()
     }
