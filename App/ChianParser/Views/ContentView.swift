@@ -319,6 +319,7 @@ struct ContentBody: View {
         .onChange(of: viewModel.filterCoordinator.showDeposits)        { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.filterCoordinator.activeRoomFilters)     { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
         .onChange(of: viewModel.filterCoordinator.activeDistrictFilters) { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
+        .onChange(of: viewModel.filterCoordinator.showOnlyPopular)       { _, _ in viewModel.scheduleRefresh(from: apartments, thresholds: thresholds, metroBanlist: metroBanlist) }
 
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -940,6 +941,15 @@ private struct StatusFilterBar: View {
                     isShown: viewModel.filterCoordinator.showDeposits,
                     color: .teal
                 ) { viewModel.filterCoordinator.showDeposits.toggle() }
+
+                Divider().frame(height: 16)
+
+                autoFlagChip(
+                    label: "Популярные (200+)",
+                    icon: "star.fill",
+                    isShown: viewModel.filterCoordinator.showOnlyPopular,
+                    color: .yellow
+                ) { viewModel.filterCoordinator.showOnlyPopular.toggle() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

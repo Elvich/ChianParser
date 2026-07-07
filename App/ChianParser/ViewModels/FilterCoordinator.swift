@@ -26,6 +26,7 @@ final class FilterCoordinator {
     var hideApartments: Bool = false
     var showAuctions: Bool = false
     var showDeposits: Bool = false
+    var showOnlyPopular: Bool = false
     var maxMetroDistance: Int = 0
     var metroWalkOnly: Bool = false
     var minBuildingFloors: Int = 0
@@ -78,6 +79,9 @@ final class FilterCoordinator {
 
         // Require detail parsed
         if requireDetailParsed && !apartment.isDetailedParsed { return false }
+        
+        // Show only popular
+        if showOnlyPopular && (apartment.viewsTotal ?? 0) < 200 { return false }
 
         // Hide studios/apartments
         if hideStudios && apartment.isStudio { return false }

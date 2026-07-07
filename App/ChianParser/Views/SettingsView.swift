@@ -581,6 +581,8 @@ private struct ParserSettingsTab: View {
 
     @State private var isBackfilling: Bool = false
     @State private var backfillResult: String = ""
+    @State private var isDeletingPopular: Bool = false
+    @State private var deleteResult: String = ""
 
     var body: some View {
         Form {
@@ -679,6 +681,23 @@ private struct ParserSettingsTab: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                
+                HStack {
+                    Button("Удалить популярные (200+)", role: .destructive) {
+                        deletePopularApartments()
+                    }
+                    .disabled(isDeletingPopular)
+
+                    if isDeletingPopular {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .padding(.leading, 4)
+                    } else if !deleteResult.isEmpty {
+                        Text(deleteResult)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             } header: {
                 Text("База данных")
             } footer: {
@@ -717,6 +736,23 @@ private struct ParserSettingsTab: View {
             try? modelContext.save()
             backfillResult = "Обновлено: \(count)"
             isBackfilling = false
+        }
+    }
+
+    private func deletePopularApartments() {
+        isDeletingPopular = true
+        deleteResult = ""
+        Task { @MainActor in
+            let descriptor = FetchDescriptor<Apartment>()
+            let apartments = (try? modelContext.fetch(descriptor)) ?? []
+            var count = 0
+            for apt in apartments where (apt.viewsTotal ?? 0) >= 200 {
+                modelContext.delete(apt)
+                count += 1
+            }
+            try? modelContext.save()
+            deleteResult = "Удалено: \(count)"
+            isDeletingPopular = false
         }
     }
 }

@@ -114,13 +114,14 @@ actor ParserActor {
         
         if existing.title != new.title { existing.title = new.title; hasChanges = true }
         if existing.address != new.address { existing.address = new.address; hasChanges = true }
-        if existing.area != new.area { existing.area = new.area; hasChanges = true }
-        if existing.floor != new.floor { existing.floor = new.floor; hasChanges = true }
-        if existing.totalFloors != new.totalFloors { existing.totalFloors = new.totalFloors; hasChanges = true }
-        if existing.houseMaterial != new.houseMaterial { existing.houseMaterial = new.houseMaterial; hasChanges = true }
-        if existing.metro != new.metro { existing.metro = new.metro; hasChanges = true }
-        if existing.metroDistance != new.metroDistance { existing.metroDistance = new.metroDistance; hasChanges = true }
-        if existing.metroTransportType != new.metroTransportType { existing.metroTransportType = new.metroTransportType; hasChanges = true }
+        
+        if let newArea = new.area, existing.area != newArea { existing.area = newArea; hasChanges = true }
+        if let newFloor = new.floor, existing.floor != newFloor { existing.floor = newFloor; hasChanges = true }
+        if let newTotalFloors = new.totalFloors, existing.totalFloors != newTotalFloors { existing.totalFloors = newTotalFloors; hasChanges = true }
+        if let newMaterial = new.houseMaterial, existing.houseMaterial != newMaterial { existing.houseMaterial = newMaterial; hasChanges = true }
+        if let newMetro = new.metro, existing.metro != newMetro { existing.metro = newMetro; hasChanges = true }
+        if let newDist = new.metroDistance, existing.metroDistance != newDist { existing.metroDistance = newDist; hasChanges = true }
+        if let newTransport = new.metroTransportType, existing.metroTransportType != newTransport { existing.metroTransportType = newTransport; hasChanges = true }
         
         if let newViews = new.viewsToday, existing.viewsToday != newViews {
             existing.viewsToday = newViews; hasChanges = true
