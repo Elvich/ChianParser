@@ -584,13 +584,15 @@ final class ContentViewModel {
     // MARK: - Data Management
 
     func clearAllData(apartments: [Apartment]) {
-        let count = apartments.count
+        var count = 0
         for apartment in apartments {
+            if (apartment.viewsTotal ?? 0) >= 200 { continue }
             modelContext.delete(apartment)
+            count += 1
         }
         do {
             try modelContext.save()
-            log = "🗑️ Удалено квартир: \(count)"
+            log = "🗑️ Удалено квартир: \(count) (популярные защищены)"
         } catch {
             log = "❌ Ошибка при удалении: \(error.localizedDescription)"
         }
